@@ -4,29 +4,6 @@
 
 {% block content %}
 
-<!-- ── Smart scale notice ── -->
-{% for c in criteria %}
-{% with si=result.scale_info|get_item:c.id %}
-{% if si.smart_scale %}
-{% if forloop.first %}
-<div class="alert mb-4 p-3 no-print" style="background:#f0fdf4;border-left:4px solid #16a34a;border-radius:6px;">
-    <div class="d-flex align-items-start gap-2">
-        <span>🎯</span>
-        <div class="small text-dark">
-            <strong>Smart scale applied automatically</strong> —
-            {% endif %}
-            <strong>{{ c.name }}</strong> scored against its real-world range ({{ si.min|floatformat:0 }}–{{ si.max|floatformat:0 }}{% if si.smart_label %} {{ si.smart_label }}{% endif %}){% if not forloop.last %},{% endif %}
-            {% if forloop.last %}
-            . Candidates are ranked proportionally to the full scale, not just stretched between each other.
-            To override, set a custom range in Step 2.
-        </div>
-    </div>
-</div>
-{% endif %}
-{% endif %}
-{% endwith %}
-{% endfor %}
-
 <!-- ── Page header ── -->
 <div class="d-flex justify-content-between align-items-start mb-4 no-print">
     <div>
@@ -34,15 +11,9 @@
         <p class="text-muted small mb-0">Weighted scoring analysis · {{ result.ranked|length }} candidates evaluated</p>
     </div>
     <div class="d-flex gap-2">
-        <a href="{% url 'export_csv' %}" class="btn btn-sm btn-outline-primary no-print"
-           title="{% if is_csv and num_to_rank %}Download top {{ num_to_rank }} shortlisted candidates{% else %}Download all candidates as CSV{% endif %}">
-            ⬇ Export CSV{% if is_csv and num_to_rank %} (Top {{ num_to_rank }}){% endif %}
-        </a>
-        <a href="{% url 'export_pdf' %}" class="btn btn-sm btn-outline-secondary no-print"
-           title="Download full results as PDF">
-            📄 Export PDF
-        </a>
+        {% if not saved %}<a href="{% url 'save_decision' %}" class="btn btn-sm btn-outline-success">Save</a>{% endif %}
         <button onclick="window.print()" class="btn btn-sm btn-outline-secondary no-print">Print</button>
+        <a href="{% url 'start_over' %}" class="btn btn-sm btn-outline-danger no-print">Start Over</a>
     </div>
 </div>
 
@@ -50,50 +21,21 @@
 <!-- 1. WINNER HERO                                    -->
 <!-- ══════════════════════════════════════════════════ -->
 {% with winner=result.ranked.0 %}
-<div class="card mb-4 border-0 shadow" style="background:linear-gradient(135deg,#1A3A6E 0%,#2563eb 100%);border-radius:16px;overflow:hidden;">
-    <div class="card-body px-4 py-4">
-
-        {% if num_to_rank and num_to_rank > 1 %}
-        <!-- MULTI-SHORTLIST: numbered pill list -->
-        <div class="text-white-50 fw-semibold text-uppercase mb-3"
-        
-                        border-radius:50px; padding:5px 14px 5px 6px;
-                        display:inline-flex;align-items:center;gap:8px;">
-                <span style="background:{% if forloop.first %}#f59e0b{% elif forloop.counter == 2 %}rgba(255,255,255,0.28){% else %}rgba(255,255,255,0.14){% endif %};
-                             color:{% if forloop.first %}#1A3A6E{% else %}#fff{% endif %};
-                             border-radius:50%;min-width:22px;height:22px;
-                             display:inline-flex;align-items:center;justify-content:center;
-                             font-size:0.68rem;font-weight:700;flex-shrink:0;">{{ forloop.counter }}</span>
-                <span class="text-white fw-semibold" style="font-size:{% if forloop.first %}0.98rem{% else %}0.88rem{% endif %};">{{ r.candidate_name }}</span>
-                <span style="color:rgba(255,255,255,0.5);font-size:0.76rem;font-weight:500;">{{ r.total_pct }}%</span>
+<div class="card mb-4 border-0 shadow" style="background:linear-gradient(135deg,#1A3A6E 0%,#2563eb 100%);border-radius:14px;">
+    <div class="card-body px-5 py-4">
+        <div class="d-flex align-items-center gap-4 flex-wrap">
+            <div class="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
+                 style="width:70px;height:70px;background:rgba(255,255,255,0.15);font-size:2rem;">🥇</div>
+            <div class="flex-grow-1">
+                <div class="text-white-50 small fw-semibold text-uppercase mb-1">Recommended Candidate</div>
+                <div class="text-white fw-bold" style="font-size:2rem;line-height:1.1;">{{ winner.candidate_name }}</div>
+                <div class="text-white-50 mt-1" style="font-size:0.88rem;">Ranked 1st · highest weighted score across all criteria</div>
             </div>
-            {% endif %}{% endfor %}
-        </div>
-        <div style="color:rgba(255,255,255,0.4);font-size:0.79rem;">Ranked by highest weighted score &middot; #1 is the strongest match</div>
-
-        {% else %}
-        <!-- SINGLE WINNER: clean bold display -->
-        <div class="d-flex align-items-center gap-4">
-            <div class="flex-shrink-0 rounded-circle d-flex align-items-center justify-content-center"
-                 style="width:62px;height:62px;background:rgba(255,255,255,0.12);font-size:1.75rem;">&#x1F947;</div>
-            <div class="flex-grow-1 overflow-hidden">
-                <div class="text-white-50 fw-semibold text-uppercase mb-1" style="font-size:0.7rem;letter-spacing:0.1em;">
-                    Recommended Candidate{% if is_csv %}&nbsp;&middot;&nbsp;<span style="font-weight:400;text-transform:none;opacity:0.8;">{{ result.num_candidates }} evaluated</span>{% endif %}
-                </div>
-                <div class="text-white fw-bold" style="font-size:2.1rem;line-height:1.15;letter-spacing:-0.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-                    {{ winner.candidate_name }}
-                </div>
-                <div style="color:rgba(255,255,255,0.4);font-size:0.81rem;margin-top:3px;">
-                    Ranked 1st &middot; highest weighted score across all criteria
-                </div>
-            </div>
-            <div class="flex-shrink-0 text-center ps-4" style="border-left:1px solid rgba(255,255,255,0.12);">
-                <div class="text-white fw-bold" style="font-size:2.6rem;line-height:1;letter-spacing:-1.5px;">{{ winner.total_pct }}%</div>
-                <div style="color:rgba(255,255,255,0.4);font-size:0.73rem;margin-top:2px;text-transform:uppercase;letter-spacing:0.06em;">overall score</div>
+            <div class="text-center flex-shrink-0">
+                <div class="text-white fw-bold" style="font-size:3rem;line-height:1;">{{ winner.total_pct }}%</div>
+                <div class="text-white-50 small">overall score</div>
             </div>
         </div>
-        {% endif %}
-
     </div>
 </div>
 {% endwith %}
@@ -102,34 +44,16 @@
 <!-- 2. FULL RANKING WITH GAP BADGES                   -->
 <!-- ══════════════════════════════════════════════════ -->
 <div class="card mb-4 border-0 shadow-sm">
-    <div class="card-header bg-white fw-semibold px-4 py-3 d-flex justify-content-between align-items-center" style="border-bottom:1px solid #eee;">
-        <span>Candidate Ranking
-            {% for c in criteria %}{% with si=result.scale_info|get_item:c.id %}{% if si.smart_scale %}
-            <span class="ms-1" style="font-size:0.62rem;background:#f0fdf4;color:#166534;border:1px solid #bbf7d0;border-radius:4px;padding:1px 5px;font-weight:600;vertical-align:middle;"
-                  title="{{ c.name }}: smart scale {{ si.min|floatformat:0 }}–{{ si.max|floatformat:0 }}{% if si.smart_label %} {{ si.smart_label }}{% endif %}">&#127919; {{ c.name }}</span>
-            {% endif %}{% endwith %}{% endfor %}
-        </span>
-
-    </div>
+    <div class="card-header bg-white fw-semibold px-4 py-3" style="border-bottom:1px solid #eee;">Candidate Ranking</div>
     <div class="card-body px-4 py-2" id="ranking-list">
         {% for r in result.ranked %}
-        <div class="d-flex align-items-center gap-4 py-3 ranking-row"
-             data-pct="{{ r.total_pct }}"
-             data-rank="{{ forloop.counter }}"
-             style="{% if num_to_rank and forloop.counter == num_to_rank %}border-bottom:2px dashed #86efac;margin-bottom:4px;{% endif %}
-                    {% if r.rank == 1 %}background:#f0f7ff;border-radius:10px;padding-left:1rem;padding-right:1rem;{% endif %}">
-            <div class="flex-shrink-0">
-                <span class="rank-badge rank-{{ r.rank }}">{{ r.rank }}</span>
-            </div>
-            <div style="min-width:140px;" class="fw-bold {% if r.rank == 1 %}fs-5{% endif %}">
-                {{ r.candidate_name }}
-                {% if num_to_rank and forloop.counter <= num_to_rank %}
-                <span style="font-size:0.68rem;background:#dcfce7;color:#166534;border-radius:4px;padding:1px 6px;font-weight:600;margin-left:4px;">✓ Shortlisted</span>
-                {% endif %}
-            </div>
+        <div class="d-flex align-items-center gap-4 py-3 ranking-row" data-pct="{{ r.total_pct }}"
+             style="{% if r.rank == 1 %}background:#f0f7ff;border-radius:10px;padding-left:1rem;padding-right:1rem;{% endif %}">
+            <div class="flex-shrink-0"><span class="rank-badge rank-{{ r.rank }}">{{ r.rank }}</span></div>
+            <div style="min-width:140px;" class="fw-bold {% if r.rank == 1 %}fs-5{% endif %}">{{ r.candidate_name }}</div>
             <div class="flex-grow-1">
                 <div style="background:#e9ecef;border-radius:6px;height:10px;overflow:hidden;">
-                    <div style="background:{% if num_to_rank and forloop.counter <= num_to_rank %}#1A5E35{% elif r.rank == 1 %}#1A3A6E{% elif r.rank == 2 %}#6c757d{% else %}#adb5bd{% endif %};
+                    <div style="background:{% if r.rank == 1 %}#1A3A6E{% elif r.rank == 2 %}#6c757d{% else %}#adb5bd{% endif %};
                                 height:100%;width:{{ r.total_pct }}%;border-radius:6px;"></div>
                 </div>
             </div>
@@ -194,25 +118,20 @@
         <span class="ms-auto badge bg-secondary">Auto-generated</span>
     </div>
     <div class="card-body px-5 py-4" style="line-height:1.8;font-size:0.96rem;">
-
         <div class="mb-4">
             <div class="fw-bold text-success mb-2">✅ Recommendation</div>
             <p class="mb-0">{{ result.narrative.recommendation }}</p>
         </div>
         <hr style="border-color:#eee;">
-        <div class="{% if is_csv %}mb-0{% else %}mb-4{% endif %}">
+        <div class="mb-4">
             <div class="fw-bold mb-2" style="color:#1A3A6E;">🎯 What Drove This Decision</div>
             <p class="mb-0">{{ result.narrative.decision_drivers }}</p>
         </div>
-
-        {% if not is_csv %}
         <hr style="border-color:#eee;">
         <div class="mb-4">
             <div class="fw-bold mb-2" style="color:#1A3A6E;">👥 Candidate Comparison</div>
             <p class="mb-0">{{ result.narrative.candidate_comparison }}</p>
         </div>
-        {% endif %}
-
         <hr style="border-color:#eee;">
         <div class="mb-4">
             <div class="fw-bold mb-2" style="color:#d97706;">🔍 Priority Alignment</div>
@@ -225,90 +144,9 @@
             </div>
             <p class="mb-0">{{ result.narrative.confidence_assessment }}</p>
         </div>
-
     </div>
 </div>
 {% endif %}
-
-
-<!-- ══════════════════════════════════════════════════ -->
-<!-- BEST PER CRITERIA                                  -->
-<!-- ══════════════════════════════════════════════════ -->
-<div class="card mb-4 border-0 shadow-sm">
-    <div class="card-header bg-white px-4 py-3" style="border-bottom:1px solid #eee;">
-        <div class="fw-semibold">🏆 Best Candidate Per Criteria</div>
-        <div class="text-muted small mt-1">Who leads in each individual factor — the overall winner may not dominate every area</div>
-    </div>
-    <div class="card-body px-4 py-3">
-        <div class="row g-3">
-        {% for c in criteria %}
-        {% with best_name="" best_val=None %}
-        {# Find candidate with highest raw value for this criteria #}
-        {% for r in result.ranked %}
-            {% with rv=r.raw_values|get_item:c.id %}
-            {% endwith %}
-        {% endfor %}
-
-        {# Use pool_rank=1 marker already computed by backend #}
-        <div class="col-md-6 col-lg-4">
-            <div class="p-3 rounded-3 h-100" style="background:#f8faff;border:1.5px solid #e2e8f0;">
-
-                <!-- Criteria name + direction -->
-                <div class="d-flex align-items-center justify-content-between mb-2">
-                    <span class="fw-semibold" style="font-size:0.88rem;color:#1f2937;">{{ c.name }}</span>
-                    {% if c.is_cost %}
-                    <span class="badge" style="background:#fff8e1;color:#b45309;font-size:9px;border:1px solid #fde68a;">↓ lower</span>
-                    {% else %}
-                    <span class="badge" style="background:#f0fdf4;color:#166534;font-size:9px;border:1px solid #bbf7d0;">↑ higher</span>
-                    {% endif %}
-                </div>
-
-                <!-- Winner for this criteria -->
-                {% for r in result.ranked %}
-                {% with pr=r.pool_rank|get_item:c.id rv=r.raw_values|get_item:c.id %}
-                {% if pr == 1 %}
-                <div class="d-flex align-items-center gap-2 mt-1">
-                    <span style="background:#ffd700;color:#333;width:24px;height:24px;border-radius:50%;
-                                 display:inline-flex;align-items:center;justify-content:center;
-                                 font-size:0.75rem;font-weight:800;flex-shrink:0;">🥇</span>
-                    <div>
-                        <div class="fw-bold" style="font-size:0.95rem;color:#1A3A6E;">{{ r.candidate_name }}</div>
-                        <div class="text-muted" style="font-size:0.78rem;">{{ rv }}
-                            {% with si=result.scale_info|get_item:c.id %}
-                            {% if si.smart_label %} {{ si.smart_label }}{% endif %}
-                            {% endwith %}
-                        </div>
-                    </div>
-                    <!-- Overall rank badge -->
-                    <span class="ms-auto badge rounded-pill"
-                          style="background:#e8f0fe;color:#1A3A6E;font-size:0.72rem;">
-                        #{{ r.rank }} overall
-                    </span>
-                </div>
-
-                <!-- Mini bar showing their score on this criteria vs max possible -->
-                {% with bv=r.breakdown|get_item:c.id %}
-                <div class="mt-2" style="background:#e9ecef;border-radius:4px;height:6px;overflow:hidden;">
-                    <div style="background:{% if c.is_cost %}#f59e0b{% else %}#1A5E35{% endif %};
-                                height:100%;
-                                width:{% widthratio bv c.weight 100 %}%;
-                                border-radius:4px;"></div>
-                </div>
-                <div class="text-muted mt-1" style="font-size:0.7rem;">
-                    Contributes {{ bv|floatformat:2 }} pts of {{ c.weight }} max weight
-                </div>
-                {% endwith %}
-                {% endif %}
-                {% endwith %}
-                {% endfor %}
-
-            </div>
-        </div>
-        {% endwith %}
-        {% endfor %}
-        </div>
-    </div>
-</div>
 
 <!-- ══════════════════════════════════════════════════ -->
 <!-- 5. SCORE BREAKDOWN TABLE                          -->
@@ -317,14 +155,6 @@
     <div class="card-header bg-white px-4 py-3" style="border-bottom:1px solid #eee;">
         <div class="fw-semibold">Score Breakdown by Criteria</div>
         <div class="text-muted small mt-1">How each candidate performed per factor and how much it contributed to their final score</div>
-        <div class="mt-2 d-flex flex-wrap gap-3" style="font-size:0.78rem;">
-            <span style="color:#6b7280;">
-                <strong style="color:#374151;">Scale label</strong> — position against the real-world range (e.g. 4 yrs on a 0–20 scale = Below average)
-            </span>
-            <span style="color:#6b7280;">
-                <strong style="color:#374151;">Pool label</strong> — rank among <em>these</em> candidates (🥇 Best in pool = highest raw value here)
-            </span>
-        </div>
     </div>
     <div class="card-body p-0">
         <div class="table-responsive">
@@ -338,7 +168,7 @@
                     {% for r in result.ranked %}
                     <th class="px-4 py-3 text-center" style="min-width:190px;border-bottom:2px solid #dee2e6;">
                         <div class="fw-bold">{{ r.candidate_name }}</div>
-                        <div class="text-muted" style="font-size:10px;margin-top:2px;">value · scale % · band · pool rank · pts</div>
+                        <div class="text-muted" style="font-size:10px;margin-top:2px;">value · performance · contribution</div>
                     </th>
                     {% endfor %}
                 </tr>
@@ -357,21 +187,13 @@
                         {% if si.user_defined %}
                         <div class="mt-1">
                             <span class="badge" style="background:#e8f0fe;color:#1A3A6E;font-size:9px;border:1px solid #c7d8fa;">
-                                📐 custom scale {{ si.min|floatformat:0 }}–{{ si.max|floatformat:0 }}
-                            </span>
-                        </div>
-                        {% elif si.smart_scale %}
-                        <div class="mt-1">
-                            <span class="badge" style="background:#f0fdf4;color:#166534;font-size:9px;border:1px solid #bbf7d0;"
-                                  title="Scale auto-detected from criteria name — scores reflect real proportional position">
-                                🎯 smart scale {{ si.min|floatformat:0 }}–{{ si.max|floatformat:0 }}{% if si.smart_label %} {{ si.smart_label }}{% endif %}
+                                📐 scale {{ si.min|floatformat:0 }}–{{ si.max|floatformat:0 }}
                             </span>
                         </div>
                         {% else %}
                         <div class="mt-1">
-                            <span class="badge" style="background:#fff8e1;color:#b45309;font-size:9px;border:1px solid #fde68a;"
-                                  title="Scores are stretched across only the candidate range — set a scale in Step 2 for more accurate results">
-                                ⚡ auto-scaled to candidates
+                            <span class="badge" style="background:#f8f9fa;color:#6c757d;font-size:9px;border:1px solid #dee2e6;">
+                                auto-scaled
                             </span>
                         </div>
                         {% endif %}
@@ -381,69 +203,23 @@
                         <span class="badge rounded-pill px-3" style="background:#e8f0fe;color:#1A3A6E;font-weight:700;font-size:0.82rem;">{{ c.weight }}</span>
                     </td>
                     {% for r in result.ranked %}
-                    {% with rv=r.raw_values|get_item:c.id nv=r.norm_values|get_item:c.id bv=r.breakdown|get_item:c.id si=result.scale_info|get_item:c.id rsp=r.raw_scale_pos|get_item:c.id pr=r.pool_rank|get_item:c.id %}
+                    {% with rv=r.raw_values|get_item:c.id nv=r.norm_values|get_item:c.id bv=r.breakdown|get_item:c.id %}
                     <td class="px-4 py-4 text-center">
-
-                        <!-- Raw value -->
-                        <div class="text-muted mb-1" style="font-size:0.85rem;">{{ rv }}</div>
-
-                        <!-- % of scale (only when scale is set) -->
-                        {% if si.user_defined or si.smart_scale %}
-                        <div class="mb-2" style="font-size:0.72rem;color:#6c757d;">
-                            {{ rsp|mul100 }}% of scale
-                        </div>
-                        {% endif %}
-
-                        <!-- LAYER 1: Absolute band — position on real-world scale -->
-                        {% if si.user_defined or si.smart_scale %}
-                            {% if rsp >= 0.8 %}
-                                <div class="mb-1" style="color:#166534;font-size:0.8rem;font-weight:600;">Excellent</div>
-                            {% elif rsp >= 0.6 %}
-                                <div class="mb-1" style="color:#2d6a4f;font-size:0.8rem;font-weight:600;">Good</div>
-                            {% elif rsp >= 0.4 %}
-                                <div class="mb-1" style="color:#d97706;font-size:0.8rem;font-weight:600;">Average</div>
-                            {% elif rsp >= 0.2 %}
-                                <div class="mb-1" style="color:#b45309;font-size:0.8rem;font-weight:600;">Below average</div>
-                            {% else %}
-                                <div class="mb-1" style="color:#dc2626;font-size:0.8rem;font-weight:600;">Low</div>
-                            {% endif %}
+                        <div class="text-muted mb-2" style="font-size:0.85rem;">{{ rv }}</div>
+                        {% if nv >= 0.8 %}
+                            <div class="fw-bold mb-2" style="color:#166534;font-size:0.88rem;">★ Best here</div>
+                        {% elif nv >= 0.6 %}
+                            <div class="fw-bold mb-2" style="color:#2d6a4f;font-size:0.88rem;">Above average</div>
+                        {% elif nv >= 0.4 %}
+                            <div class="fw-bold mb-2" style="color:#d97706;font-size:0.88rem;">Mid-field</div>
+                        {% elif nv >= 0.2 %}
+                            <div class="fw-bold mb-2" style="color:#b45309;font-size:0.88rem;">Below average</div>
                         {% else %}
-                            {% comment %}No scale set — keep original single-label logic{% endcomment %}
-                            {% if nv >= 0.8 %}
-                                <div class="mb-1" style="color:#166534;font-size:0.8rem;font-weight:600;">★ Best here</div>
-                            {% elif nv >= 0.6 %}
-                                <div class="mb-1" style="color:#2d6a4f;font-size:0.8rem;font-weight:600;">Above average</div>
-                            {% elif nv >= 0.4 %}
-                                <div class="mb-1" style="color:#d97706;font-size:0.8rem;font-weight:600;">Mid-field</div>
-                            {% elif nv >= 0.2 %}
-                                <div class="mb-1" style="color:#b45309;font-size:0.8rem;font-weight:600;">Below average</div>
-                            {% else %}
-                                <div class="mb-1" style="color:#dc2626;font-size:0.8rem;font-weight:600;">✗ Weakest</div>
-                            {% endif %}
+                            <div class="fw-bold mb-2" style="color:#dc2626;font-size:0.88rem;">✗ Weakest here</div>
                         {% endif %}
-
-                        <!-- LAYER 2: Relative rank within this pool -->
-                        {% if pr == 1 %}
-                            <div class="mb-2" style="background:#dcfce7;color:#166534;border:1px solid #86efac;
-                                 border-radius:20px;padding:2px 9px;font-size:0.72rem;font-weight:700;display:inline-block;">
-                                🥇 Best in pool
-                            </div>
-                        {% elif pr == result.num_candidates %}
-                            <div class="mb-2" style="background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;
-                                 border-radius:20px;padding:2px 9px;font-size:0.72rem;font-weight:600;display:inline-block;">
-                                Lowest in pool
-                            </div>
-                        {% else %}
-                            <div class="mb-2" style="background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;
-                                 border-radius:20px;padding:2px 9px;font-size:0.72rem;font-weight:600;display:inline-block;">
-                                #{{ pr }} in pool
-                            </div>
-                        {% endif %}
-
-                        <!-- Points contribution — 3 decimal places to show fine differences -->
                         <div class="d-inline-block rounded-pill px-2 py-1"
-                             style="background:#f1f3f5;color:#555;font-size:0.72rem;border:1px solid #dee2e6;display:block;margin-top:4px;">
-                            +{{ bv|floatformat:3 }} of {{ c.weight }} pts
+                             style="background:#f1f3f5;color:#555;font-size:0.72rem;border:1px solid #dee2e6;">
+                            +{{ bv|floatformat:1 }} of {{ c.weight }} pts
                         </div>
                     </td>
                     {% endwith %}
@@ -552,39 +328,8 @@ const breakdownData = {
 };
 const originalWeights = { {% for c in criteria %}"{{ c.id }}": {{ c.weight }},{% endfor %} };
 
-const IS_CSV    = {{ is_csv|yesno:"true,false" }};
-const NUM_TO_RANK = {% if num_to_rank %}{{ num_to_rank }}{% else %}null{% endif %};
-
-// ── Show/hide ranking rows based on select ─────────────────────────────────
-function applyRankFilter(limitVal) {
-    const limit = (limitVal === 'all' || limitVal == null) ? Infinity : parseInt(limitVal);
-    const allRows  = document.querySelectorAll('.ranking-row');
-    const gapRows  = document.querySelectorAll('.gap-badge-row');
-
-    // Build a Set of visible ranks (1-based)
-    const visibleRanks = new Set();
-    allRows.forEach(row => {
-        const rank = parseInt(row.dataset.rank);
-        const show = rank <= limit;
-        row.style.display = show ? '' : 'none';
-        if (show) visibleRanks.add(rank);
-    });
-
-    // Gap rows sit between rank N and rank N+1 — show only if BOTH neighbours visible
-    gapRows.forEach(row => {
-        const idx  = parseInt(row.dataset.index);  // 0-based = gap after rank idx+1
-        const rankA = idx + 1;
-        const rankB = idx + 2;
-        row.style.display = (visibleRanks.has(rankA) && visibleRanks.has(rankB)) ? '' : 'none';
-    });
-}
-
-(function initPage() {
-    if (IS_CSV && NUM_TO_RANK) {
-        applyRankFilter(NUM_TO_RANK);
-    }
-
-    // ── Gap badges between ranking rows ───────────────────────────────────
+// ── Gap badges between ranking rows ───────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.gap-badge-label').forEach((el, i) => {
         if (i + 1 >= rankData.length) return;
         const gap = rankData[i].pct - rankData[i + 1].pct;
@@ -652,7 +397,7 @@ function applyRankFilter(limitVal) {
             alertZone.appendChild(div);
         });
     }
-})();
+});
 
 // ── What-if sliders ────────────────────────────────────────────────────────
 let debounceTimer;
