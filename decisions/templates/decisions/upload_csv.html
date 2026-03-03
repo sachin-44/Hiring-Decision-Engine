@@ -1,0 +1,193 @@
+{% extends "decisions/base.html" %}
+{% block title %}Upload Candidate Data{% endblock %}
+{% block content %}
+
+<style>
+.format-table th { background:#e8f0fe; font-size:0.82rem; }
+.format-table td { font-size:0.82rem; }
+.drop-zone {
+    border: 2.5px dashed #c7d8fa; border-radius: 14px;
+    padding: 2.5rem 2rem; text-align: center;
+    background: #f8faff; cursor: pointer;
+    transition: all 0.2s;
+}
+.drop-zone:hover, .drop-zone.drag-over {
+    border-color: #1A3A6E; background: #eef3ff;
+}
+.drop-zone.has-file { border-color: #86efac; background: #f0fdf4; }
+.drop-icon { font-size: 2.5rem; margin-bottom: 0.5rem; }
+
+/* Validation panel */
+.val-panel { border-radius: 12px; padding: 1rem 1.25rem; margin-top: 1.25rem; }
+.val-error  { background:#fef2f2; border:1.5px solid #fca5a5; }
+.val-warn   { background:#fffbeb; border:1.5px solid #fde68a; }
+.val-ok     { background:#f0fdf4; border:1.5px solid #86efac; }
+.bad-cell-table { font-size:0.8rem; }
+.bad-cell-table th { background:#fee2e2; color:#991b1b; font-weight:600; }
+.bad-cell-table td { vertical-align:middle; }
+</style>
+
+<div class="card p-4">
+    <h2 class="fw-bold mb-1">Upload Candidate Data</h2>
+    <p class="text-muted small mb-4">Role: <strong>{{ role }}</strong></p>
+
+    <!-- Format guide -->
+    <div class="mb-4 p-3 rounded" style="background:#f8f9fa;border:1px solid #e9ecef;">
+        <div class="fw-semibold mb-2" style="color:#1A3A6E;">📋 Required format</div>
+        <div class="small text-muted mb-2">
+            <strong>First column</strong> = candidate names &nbsp;·&nbsp;
+            <strong>Remaining columns</strong> = criteria (must be numbers) &nbsp;·&nbsp;
+            Accepted: <strong>.csv</strong> and <strong>.xlsx</strong>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-sm table-bordered mb-0 format-table">
+                <thead>
+                    <tr><th>Candidate Name</th><th>Salary</th><th>Experience</th><th>Test Score</th><th>Culture Fit</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Alice Johnson</td><td>450000</td><td>6</td><td>88</td><td>8</td></tr>
+                    <tr><td>Bob Kumar</td><td>380000</td><td>4</td><td>91</td><td>7</td></tr>
+                    <tr><td>Carol Patel</td><td>520000</td><td>9</td><td>79</td><td>9</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="mt-2 d-flex gap-3 flex-wrap" style="font-size:0.78rem;color:#6b7280;">
+            <span>⚠️ No merged cells in Excel</span>
+            <span>⚠️ Column names in the first row</span>
+            <span>⚠️ No totals/summary rows</span>
+            <span>⚠️ Numbers only in criteria columns</span>
+        </div>
+    </div>
+
+    <!-- Upload form -->
+    <form method="post" enctype="multipart/form-data" id="uploadForm">
+        {% csrf_token %}
+
+        <div class="drop-zone {% if validation and not validation.ok %}val-error{% elif validation and validation.ok %}val-ok{% endif %}"
+             id="dropZone">
+            <div class="drop-icon" id="dropIcon">📂</div>
+            <div class="fw-semibold mb-1" id="dropTitle">Drop your file here or click to browse</div>
+            <div class="text-muted small" id="dropSub">.csv or .xlsx · max 10MB</div>
+            <input type="file" name="datafile" accept=".csv,.xlsx,.xls"
+                   class="d-none" required id="fileInput">
+        </div>
+
+        <!-- Validation results -->
+        {% if validation %}
+
+            {% if validation.errors %}
+            <div class="val-panel val-error mt-3">
+                <div class="fw-bold mb-2" style="color:#991b1b;">❌ File cannot be processed</div>
+                {% for err in validation.errors %}
+                <div class="small mb-1" style="color:#7f1d1d;">• {{ err }}</div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if validation.warnings %}
+            <div class="val-panel val-warn mt-2">
+                <div class="fw-bold mb-2" style="color:#92400e;">⚠️ Warnings (file will still be processed)</div>
+                {% for w in validation.warnings %}
+                <div class="small mb-1" style="color:#78350f;">• {{ w }}</div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if validation.bad_cells %}
+            <div class="mt-3">
+                <div class="fw-semibold mb-2" style="color:#991b1b;font-size:0.88rem;">
+                    Problem cells (showing first {{ validation.bad_cells|length }}):
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered bad-cell-table">
+                        <thead>
+                            <tr><th>Row #</th><th>Column</th><th>Value found</th><th>Issue</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for bc in validation.bad_cells %}
+                            <tr>
+                                <td><span class="badge bg-danger">Row {{ bc.row }}</span></td>
+                                <td>{{ bc.col }}</td>
+                                <td><code>{{ bc.value }}</code></td>
+                                <td><span class="badge {% if bc.issue == 'Not a number' %}bg-danger{% else %}bg-warning text-dark{% endif %}">{{ bc.issue }}</span></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% endif %}
+
+            {% if validation.stats %}
+            <div class="mt-2 d-flex gap-3 flex-wrap" style="font-size:0.8rem;color:#6b7280;">
+                <span>{{ validation.stats.rows }} candidates</span>
+                <span>{{ validation.stats.cols }} criteria columns</span>
+                {% if validation.stats.empty_cells %}
+                <span style="color:#b45309;">{{ validation.stats.empty_cells }} empty cell(s)</span>
+                {% endif %}
+            </div>
+            {% endif %}
+
+        {% endif %}
+
+        <div class="d-flex gap-3 mt-4">
+            <a href="{% url 'step1_role' %}" class="btn btn-outline-secondary">← Back</a>
+            <button type="submit" class="btn btn-primary px-4" id="submitBtn">
+                Upload & Detect Criteria →
+            </button>
+        </div>
+    </form>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const dropZone  = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+const dropIcon  = document.getElementById('dropIcon');
+const dropTitle = document.getElementById('dropTitle');
+const dropSub   = document.getElementById('dropSub');
+
+// Click to browse
+dropZone.addEventListener('click', () => fileInput.click());
+
+// File selected
+fileInput.addEventListener('change', function() {
+    if (this.files[0]) updateDropUI(this.files[0]);
+});
+
+function updateDropUI(file) {
+    const bytes = file.size;
+    const sizeStr = bytes < 1024 * 1024
+        ? (bytes / 1024).toFixed(1) + ' KB'
+        : (bytes / 1024 / 1024).toFixed(2) + ' MB';
+    dropIcon.textContent  = file.name.endsWith('.xlsx') || file.name.endsWith('.xls') ? '📊' : '📄';
+    dropTitle.textContent = file.name;
+    dropSub.textContent   = `${sizeStr} · Click to change`;
+    dropZone.classList.add('has-file');
+    dropZone.classList.remove('val-error');
+}
+
+// Drag & drop
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) {
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        fileInput.files = dt.files;
+        updateDropUI(file);
+    }
+});
+
+// Submit feedback
+document.getElementById('uploadForm').addEventListener('submit', () => {
+    document.getElementById('submitBtn').textContent = 'Validating…';
+    document.getElementById('submitBtn').disabled = true;
+});
+</script>
+{% endblock %}

@@ -49,5 +49,14 @@ def as_percent(value):
 
 
 @register.filter
+def mul100(value):
+    """Multiply a 0-1 float by 100 and return as rounded integer string."""
+    try:
+        return f"{float(value) * 100:.0f}"
+    except (ValueError, TypeError):
+        return "0"
+
+
+@register.filter
 def zip_with(a, b):
     return zip(a, b)

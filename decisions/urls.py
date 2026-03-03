@@ -12,4 +12,8 @@ urlpatterns = [
     path('history/',            views.decision_list,    name='decision_list'),
     path('history/<int:pk>/',   views.decision_detail,  name='decision_detail'),
     path('start-over/',         views.start_over,       name='start_over'),
+    path('upload/',             views.upload_csv,       name='upload_csv'),
+    path('upload/review/',      views.upload_review,    name='upload_review'),
+    path('export/csv/',         views.export_csv,       name='export_csv'),
+    path('export/pdf/',         views.export_pdf,       name='export_pdf'),
 ]

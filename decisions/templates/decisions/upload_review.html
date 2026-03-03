@@ -1,0 +1,388 @@
+{% extends "decisions/base.html" %}
+{% block title %}Review Detected Criteria{% endblock %}
+
+{% block content %}
+<style>
+/* ── Row layout: fluid grid that never squishes ── */
+.cr-row {
+    background:#fff;
+    border:1.5px solid #e2e8f0;
+    border-radius:12px;
+    padding:1rem 1.2rem;
+    margin-bottom:0.7rem;
+    display:grid;
+    grid-template-columns: minmax(160px,1fr) 80px 200px minmax(180px,220px) 36px;
+    gap:14px;
+    align-items:center;
+    transition:box-shadow 0.18s;
+}
+.cr-row:hover { box-shadow:0 3px 14px rgba(26,58,110,0.07); border-color:#c7d8fa; }
+
+.cr-header {
+    display:grid;
+    grid-template-columns: minmax(160px,1fr) 80px 200px minmax(180px,220px) 36px;
+    gap:14px;
+    padding:0 1.2rem;
+    margin-bottom:0.4rem;
+}
+.col-label {
+    font-size:0.71rem; font-weight:700; color:#9ca3af;
+    text-transform:uppercase; letter-spacing:0.06em;
+}
+
+/* ── Weight input — roomy, never clips ── */
+.w-input {
+    width:100%;
+    box-sizing:border-box;
+    text-align:center;
+    border:1.5px solid #c7d8fa;
+    border-radius:8px;
+    padding:7px 4px;
+    font-weight:700;
+    font-size:1rem;
+    color:#1A3A6E;
+    background:#f7f9ff;
+    font-family:'Courier New',monospace;
+    transition:border-color 0.15s, box-shadow 0.15s;
+}
+.w-input:focus {
+    outline:none;
+    border-color:#1A3A6E;
+    box-shadow:0 0 0 3px rgba(26,58,110,0.1);
+}
+
+/* ── Direction toggle ── */
+.dir-switch {
+    display:flex;
+    border:1.5px solid #dee2e6;
+    border-radius:10px;
+    overflow:hidden;
+    background:#f8f9fa;
+    width:100%;
+}
+.dir-btn {
+    padding:7px 0;
+    font-size:0.78rem;
+    font-weight:600;
+    flex:1;
+    text-align:center;
+    cursor:pointer;
+    white-space:nowrap;
+    user-select:none;
+    color:#9ca3af;
+    border:none;
+    background:none;
+    transition:background 0.15s, color 0.15s;
+    line-height:1;
+}
+.dir-btn.higher.active {
+    background:linear-gradient(135deg,#d1fae5,#a7f3d0);
+    color:#065f46;
+    font-weight:700;
+}
+.dir-btn.lower.active {
+    background:linear-gradient(135deg,#fef3c7,#fde68a);
+    color:#92400e;
+    font-weight:700;
+}
+
+/* ── Scale inputs — fluid pair ── */
+.scale-pair {
+    display:flex;
+    align-items:center;
+    gap:6px;
+}
+.sc-input {
+    flex:1;
+    min-width:0;
+    border:1.5px solid #dee2e6;
+    border-radius:8px;
+    padding:7px 8px;
+    font-size:0.85rem;
+    color:#1f2937;
+    background:#fff;
+    box-sizing:border-box;
+    transition:border-color 0.15s;
+}
+.sc-input:focus { outline:none; border-color:#1A3A6E; box-shadow:0 0 0 2px rgba(26,58,110,0.08); }
+.sc-arrow {
+    color:#9ca3af;
+    font-size:0.8rem;
+    flex-shrink:0;
+    font-weight:600;
+}
+
+/* ── Smart scale tag ── */
+.smart-tag {
+    display:inline-flex;
+    align-items:center;
+    gap:3px;
+    background:#f0fdf4;
+    border:1px solid #86efac;
+    border-radius:4px;
+    padding:1px 6px;
+    font-size:0.68rem;
+    color:#166534;
+    font-weight:600;
+    margin-top:4px;
+}
+
+/* ── Remove button ── */
+.remove-btn {
+    width:30px; height:30px;
+    border:1.5px solid #fca5a5;
+    border-radius:7px;
+    background:#fff5f5;
+    color:#dc2626;
+    font-size:0.9rem;
+    cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+    transition:background 0.15s;
+    flex-shrink:0;
+}
+.remove-btn:hover { background:#fee2e2; }
+
+/* ── Positions box ── */
+.positions-box {
+    background:#f0f5ff;
+    border:1.5px solid #c7d8fa;
+    border-radius:12px;
+    padding:1rem 1.25rem;
+    margin-bottom:1.25rem;
+}
+.pos-input {
+    width:80px;
+    text-align:center;
+    border:1.5px solid #c7d8fa;
+    border-radius:8px;
+    padding:6px 10px;
+    font-weight:700;
+    font-size:1.1rem;
+    color:#1A3A6E;
+}
+.pos-input:focus { outline:none; border-color:#1A3A6E; box-shadow:0 0 0 3px rgba(26,58,110,0.1); }
+
+/* ── Weight total pill ── */
+#wt-badge {
+    display:inline-flex; align-items:center; gap:8px;
+    background:#f7f9ff; border:1.5px solid #c7d8fa;
+    border-radius:20px; padding:4px 14px;
+    font-size:0.88rem; font-weight:700; color:#1A3A6E;
+}
+</style>
+
+<div class="card p-4">
+
+    <!-- Header -->
+    <div class="d-flex align-items-start justify-content-between mb-3">
+        <div>
+            <h2 class="fw-bold mb-0">Review Criteria</h2>
+            <p class="text-muted small mb-0">Role: <strong>{{ role }}</strong> &nbsp;·&nbsp; Auto-detected from your file</p>
+        </div>
+        <span class="badge rounded-pill px-3 py-2" style="background:#e8f0fe;color:#1A3A6E;font-size:0.82rem;">
+            {{ total_candidates }} candidates loaded
+        </span>
+    </div>
+
+    <!-- Candidate name preview -->
+    <div class="mb-3 p-3 rounded" style="background:#f8f9fa;border:1px solid #e9ecef;">
+        <div class="small fw-semibold text-muted mb-2">👥 {{ name_col }}</div>
+        <div class="d-flex flex-wrap gap-2">
+            {% for name in sample_names %}
+            <span class="badge" style="background:#fff;border:1px solid #dee2e6;color:#374151;font-weight:500;font-size:0.79rem;padding:3px 9px;">{{ name }}</span>
+            {% endfor %}
+            {% if total_candidates > 5 %}
+            <span class="badge" style="background:#e8f0fe;color:#1A3A6E;font-size:0.79rem;padding:3px 9px;">+{{ total_candidates|add:"-5" }} more</span>
+            {% endif %}
+        </div>
+    </div>
+
+    <form method="post">
+        {% csrf_token %}
+
+        <!-- Positions to fill -->
+        <div class="positions-box">
+            <div class="d-flex align-items-center gap-4 flex-wrap">
+                <div>
+                    <div class="fw-semibold mb-1" style="color:#1A3A6E;">🎯 Positions to fill</div>
+                    <div class="text-muted small">Top N candidates will be highlighted in results.</div>
+                </div>
+                <div class="d-flex align-items-center gap-2 flex-shrink-0">
+                    <input type="number" name="num_to_rank" value="1" min="1" max="{{ total_candidates }}"
+                           class="pos-input" id="posInput">
+                    <span class="text-muted small">of {{ total_candidates }}</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Weight total -->
+        <div class="d-flex align-items-center gap-3 mb-3">
+            <span class="small text-muted fw-semibold">Total weight:</span>
+            <span id="wt-badge">
+                <span id="wt-val">—</span>
+                <span id="wt-hint" style="font-weight:400;font-size:0.78rem;color:#6b7280;"></span>
+            </span>
+        </div>
+
+        <!-- Column headers -->
+        <div class="cr-header mt-2 mb-1">
+            <div class="col-label">Criteria name</div>
+            <div class="col-label" style="text-align:center;">Weight</div>
+            <div class="col-label" style="text-align:center;">Direction</div>
+            <div class="col-label">
+                Scale range
+                <span tabindex="0" data-bs-toggle="tooltip"
+                      title="Set the realistic min–max for this criteria. Scores are proportional within this range."
+                      style="cursor:help;color:#9ca3af;">ⓘ</span>
+            </div>
+            <div></div>
+        </div>
+
+        {% for h in crit_headers %}
+        <div class="cr-row" id="row_{% for key, val in auto_map.items %}{% if key == h %}{{ val.id }}{% endif %}{% endfor %}">
+
+            <!-- Col 1: Criteria name + data preview -->
+            <div>
+                <div class="fw-semibold" style="font-size:0.93rem;color:#1f2937;">{{ h }}</div>
+                {% for ck, cv in col_previews.items %}{% if ck == h %}
+                <div class="text-muted" style="font-size:0.73rem;margin-top:2px;">
+                    Range: {{ cv.min|floatformat:1 }}–{{ cv.max|floatformat:1 }}
+                    &nbsp;·&nbsp;e.g. {% for s in cv.sample %}{{ s|floatformat:1 }}{% if not forloop.last %}, {% endif %}{% endfor %}
+                </div>
+                {% endif %}{% endfor %}
+                {% for key, val in auto_map.items %}{% if key == h %}
+                    {% if val.scale_min is not None %}
+                    <span class="smart-tag">🎯 smart scale {{ val.scale_min|floatformat:0 }}–{{ val.scale_max|floatformat:0 }}</span>
+                    {% endif %}
+                {% endif %}{% endfor %}
+            </div>
+
+            <!-- Col 2: Weight -->
+            <div>
+                {% for key, val in auto_map.items %}{% if key == h %}
+                <input type="number" name="weight_{{ val.id }}" value="{{ val.weight }}"
+                       min="1" max="100" class="w-input criteria-weight">
+                {% endif %}{% endfor %}
+            </div>
+
+            <!-- Col 3: Direction toggle -->
+            <div>
+                {% for key, val in auto_map.items %}{% if key == h %}
+                <div class="dir-switch" id="ds_{{ val.id }}">
+                    <button type="button" class="dir-btn higher {% if not val.is_cost %}active{% endif %}"
+                            data-id="{{ val.id }}">↑ Higher</button>
+                    <button type="button" class="dir-btn lower {% if val.is_cost %}active{% endif %}"
+                            data-id="{{ val.id }}">↓ Lower</button>
+                </div>
+                <input type="hidden" name="is_cost_{{ val.id }}" id="ic_{{ val.id }}"
+                       value="{% if val.is_cost %}1{% else %}0{% endif %}">
+                {% endif %}{% endfor %}
+            </div>
+
+            <!-- Col 4: Scale range -->
+            <div>
+                {% for key, val in auto_map.items %}{% if key == h %}
+                <div class="scale-pair">
+                    <input type="number" name="scale_min_{{ val.id }}" class="sc-input"
+                           placeholder="Min" step="any"
+                           value="{% if val.scale_min is not None %}{{ val.scale_min|floatformat:0 }}{% endif %}">
+                    <span class="sc-arrow">→</span>
+                    <input type="number" name="scale_max_{{ val.id }}" class="sc-input"
+                           placeholder="Max" step="any"
+                           value="{% if val.scale_max is not None %}{{ val.scale_max|floatformat:0 }}{% endif %}">
+                </div>
+                {% endif %}{% endfor %}
+            </div>
+
+            <!-- Col 5: Remove -->
+            <div>
+                {% for key, val in auto_map.items %}{% if key == h %}
+                <button type="button" class="remove-btn" title="Remove this criteria"
+                        onclick="removeRow('row_{{ val.id }}', 'weight_{{ val.id }}')">✕</button>
+                {% endif %}{% endfor %}
+            </div>
+
+        </div>
+        {% endfor %}
+
+        <div class="d-flex gap-3 mt-4 align-items-center">
+            <a href="{% url 'upload_csv' %}" class="btn btn-outline-secondary">← Re-upload</a>
+            <button type="submit" class="btn btn-primary px-4">
+                Score All {{ total_candidates }} Candidates →
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Direction toggle ────────────────────────────────────────────────────────
+document.querySelectorAll('.dir-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const id  = btn.dataset.id;
+        const sw  = document.getElementById(`ds_${id}`);
+        const hid = document.getElementById(`ic_${id}`);
+        const isLower = btn.classList.contains('lower');
+        sw.querySelector('.higher').classList.toggle('active', !isLower);
+        sw.querySelector('.lower').classList.toggle('active', isLower);
+        hid.value = isLower ? '1' : '0';
+    });
+});
+
+// ── Weight total ─────────────────────────────────────────────────────────────
+function updateTotal() {
+    let total = 0;
+    document.querySelectorAll('.criteria-weight').forEach(i => {
+        const v = parseInt(i.value);
+        if (!isNaN(v) && v > 0) total += v;
+    });
+    const valEl  = document.getElementById('wt-val');
+    const hintEl = document.getElementById('wt-hint');
+    const badge  = document.getElementById('wt-badge');
+    valEl.textContent = total || '—';
+    if (total === 100) {
+        badge.style.borderColor = '#86efac';
+        badge.style.background  = '#f0fdf4';
+        valEl.style.color       = '#166534';
+        hintEl.textContent      = '✓ perfect';
+        hintEl.style.color      = '#166534';
+    } else if (total > 0) {
+        badge.style.borderColor = '#fde68a';
+        badge.style.background  = '#fffbeb';
+        valEl.style.color       = '#92400e';
+        hintEl.textContent      = '— auto-normalised';
+        hintEl.style.color      = '#92400e';
+    } else {
+        badge.style.borderColor = '#c7d8fa';
+        badge.style.background  = '#f7f9ff';
+        valEl.style.color       = '#1A3A6E';
+        hintEl.textContent      = '';
+    }
+}
+document.addEventListener('input', e => {
+    if (e.target.classList.contains('criteria-weight')) updateTotal();
+});
+updateTotal();
+
+// ── Remove criteria row ──────────────────────────────────────────────────────
+function removeRow(rowId, weightName) {
+    const row = document.getElementById(rowId);
+    if (row) {
+        // Disable the weight input so it's not submitted
+        const inp = row.querySelector(`[name="${weightName}"]`);
+        if (inp) inp.disabled = true;
+        // Visually fade and remove
+        row.style.transition = 'opacity 0.2s, transform 0.2s';
+        row.style.opacity = '0';
+        row.style.transform = 'translateX(10px)';
+        setTimeout(() => { row.remove(); updateTotal(); }, 200);
+    }
+}
+
+// ── Bootstrap tooltips ───────────────────────────────────────────────────────
+document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => {
+    if (window.bootstrap) new bootstrap.Tooltip(el);
+});
+</script>
+{% endblock %}

@@ -29,14 +29,14 @@ class CriteriaForm(forms.Form):
         max_length=100,
         widget=forms.TextInput(attrs={
             'class': 'form-control',
-            'placeholder': 'e.g. Salary, Experience, Test Score'
+            'placeholder': ''
         })
     )
     weight = forms.IntegerField(
         min_value=1,
         widget=forms.NumberInput(attrs={
             'class': 'form-control',
-            'placeholder': 'e.g. 40',
+            'placeholder': '',
             'min': '1',
         })
     )
@@ -50,7 +50,7 @@ class CriteriaForm(forms.Form):
         required=False,
         widget=forms.TextInput(attrs={
             'class': 'form-control',
-            'placeholder': 'e.g. Annual salary in GBP (optional)'
+            'placeholder': ''
         })
     )
     scale_min = forms.FloatField(
@@ -58,7 +58,7 @@ class CriteriaForm(forms.Form):
         label='Realistic min',
         widget=forms.NumberInput(attrs={
             'class': 'form-control',
-            'placeholder': 'e.g. 0',
+            'placeholder': '',
             'step': 'any',
         })
     )
@@ -67,7 +67,7 @@ class CriteriaForm(forms.Form):
         label='Realistic max',
         widget=forms.NumberInput(attrs={
             'class': 'form-control',
-            'placeholder': 'e.g. 100',
+            'placeholder': '',
             'step': 'any',
         })
     )
@@ -81,7 +81,7 @@ class CandidateNameForm(forms.Form):
         max_length=100,
         widget=forms.TextInput(attrs={
             'class': 'form-control',
-            'placeholder': 'e.g. Alice Johnson'
+            'placeholder': ''
         })
     )
 
@@ -106,7 +106,7 @@ class CandidateValueForm(forms.Form):
                     label=f"{c['name']}{hint}",
                     widget=forms.NumberInput(attrs={
                         'class': 'form-control',
-                        'placeholder': f"Enter {c['name'].lower()} value",
+                        'placeholder': '',
                         'step': 'any',
                         'style': 'font-size:1rem; padding: 0.5rem 0.75rem;',
                     })
