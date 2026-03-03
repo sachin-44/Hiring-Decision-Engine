@@ -40,6 +40,189 @@ FINAL SCORE:
 from django.conf import settings
 
 
+# ── Smart scale defaults ───────────────────────────────────────────────────────
+# Maps keyword patterns to (min, max, unit_label).
+# Applied automatically when user leaves scale_min/scale_max blank.
+# This prevents "4 vs 5 on a 10-point scale" from stretching to 0%–100%.
+
+_SMART_SCALES = [
+
+    # ── Financial / Credit ────────────────────────────────────────────────
+    # CIBIL / credit score (India: 300–900)
+    (['cibil', 'credit score', 'credit rating', 'cibil score',
+      'bureau score', 'experian score', 'equifax score'], 300, 900, 'CIBIL (300–900)'),
+
+    # Salary / CTC — INR
+    (['salary', 'ctc', 'package', 'compensation', 'rupees', 'inr',
+      'lpa', 'lakh', 'annual pay', 'fixed pay', 'gross pay',
+      'expected salary', 'current salary', 'offered salary'], 0, 1000000, '₹ (0–10L)'),
+
+    # Salary — USD / global
+    (['salary usd', 'salary $', 'annual salary $', 'compensation usd'], 0, 200000, '$ (0–200K)'),
+
+    # ── Academic / Exam scores ────────────────────────────────────────────
+    # Percentage / marks
+    (['percentage', 'marks', 'academic score', 'aggregate', '10th',
+      '12th', 'ssc', 'hsc', 'board marks', 'board percentage',
+      'class 10', 'class 12', 'matric', 'intermediate'], 0, 100, '% (0–100)'),
+
+    # CGPA / GPA (10-point)
+    (['cgpa', 'gpa', 'grade point', 'cumulative gpa',
+      'semester gpa', 'sgpa', 'ugc grade'], 0, 10, 'CGPA (0–10)'),
+
+    # GPA 4.0 scale
+    (['gpa 4', 'gpa/4', 'us gpa', '4.0 gpa'], 0, 4, 'GPA (0–4.0)'),
+
+    # GRE (combined: 260–340)
+    (['gre', 'gre score', 'gre total'], 260, 340, 'GRE (260–340)'),
+
+    # GMAT (200–800)
+    (['gmat', 'gmat score'], 200, 800, 'GMAT (200–800)'),
+
+    # IELTS (0–9 bands)
+    (['ielts', 'ielts score', 'ielts band'], 0, 9, 'IELTS (0–9)'),
+
+    # TOEFL (0–120)
+    (['toefl', 'toefl score'], 0, 120, 'TOEFL (0–120)'),
+
+    # UPSC / government exam rank
+    (['upsc rank', 'civil services rank', 'ias rank', 'upsc score'], 1, 1000, 'rank (1–1000)'),
+
+    # CAT percentile (0–100)
+    (['cat percentile', 'cat score', 'mat score', 'xat score',
+      'snap score', 'nmat score', 'cmat score'], 0, 100, 'percentile (0–100)'),
+
+    # General aptitude / written test / assessment
+    (['test score', 'aptitude', 'written test', 'assessment score',
+      'assessment marks', 'online test', 'hackerrank', 'codility',
+      'technical test', 'screening score', 'pre-hire test'], 0, 100, 'score /100'),
+
+    # ── Work experience ───────────────────────────────────────────────────
+    (['experience', 'years of exp', 'work exp', 'relevant exp', 'total exp',
+      'exp years', 'industry experience', 'domain experience',
+      'years experience', 'work history', 'professional experience',
+      'total experience', 'relevant experience'], 0, 20, 'yrs (0–20)'),
+
+    # ── Notice period ─────────────────────────────────────────────────────
+    (['notice period', 'notice days', 'joining days',
+      'available in days', 'availability days'], 0, 180, 'days (0–180)'),
+    (['notice weeks', 'joining weeks'], 0, 26, 'weeks (0–26)'),
+    (['notice months', 'notice period (months)', 'joining months'], 0, 6, 'months (0–6)'),
+
+    # ── Age ───────────────────────────────────────────────────────────────
+    (['candidate age', 'age (years)', 'age in years', 'applicant age',
+      'years old', 'age'], 18, 65, 'yrs (18–65)'),
+
+    # ── Psychometric / Personality assessments ────────────────────────────
+    # Big Five personality traits (typically scored 1–5 or 0–100)
+    (['openness', 'conscientiousness', 'extraversion', 'agreeableness',
+      'neuroticism', 'big five', 'ocean score', 'personality score',
+      'disc score', 'mbti score', 'enneagram', 'hogan score',
+      'predictive index', 'belbin score'], 0, 100, 'score (0–100)'),
+
+    # Emotional intelligence (EQ)
+    (['emotional intelligence', 'eq score', 'emotional quotient',
+      'empathy score', 'ei score', 'eq test'], 0, 100, 'EQ (0–100)'),
+
+    # Integrity / honesty test
+    (['integrity score', 'honesty score', 'reliability score',
+      'ethics score', 'conduct score'], 0, 100, 'score (0–100)'),
+
+    # ── Ratings on /10 scale ──────────────────────────────────────────────
+    (['communication', 'soft skill', 'leadership', 'teamwork',
+      'attitude', 'culture fit', 'interpersonal', 'presentation skill',
+      'negotiation skill', 'problem solving', 'analytical skill',
+      'critical thinking', 'creativity', 'adaptability', 'initiative',
+      'rating', 'score /10', 'out of 10', 'interviewer rating',
+      'hr rating', 'panel score', 'overall rating', 'fit score',
+      'motivation', 'drive', 'ownership', 'accountability',
+      'resilience', 'stress tolerance', 'time management',
+      'decision making', 'strategic thinking', 'execution'],
+     0, 10, '/10'),
+
+    # ── IQ / cognitive ────────────────────────────────────────────────────
+    (['iq', 'iq score', 'cognitive ability', 'cognitive score',
+      'fluid intelligence', 'raven score', 'cognitive assessment',
+      'wonderlic', 'cognitive test'], 70, 160, 'IQ (70–160)'),
+
+    # ── Language proficiency (CEF: A1=1 to C2=6) — usually scored 1–10 ──
+    (['language proficiency', 'english proficiency', 'english score',
+      'language score', 'spoken english', 'verbal ability',
+      'verbal score', 'reading comprehension'], 0, 10, '/10'),
+
+    # ── Technical / coding skills ─────────────────────────────────────────
+    (['coding score', 'programming score', 'technical score',
+      'github score', 'stackoverflow score', 'leetcode rating',
+      'codeforces rating', 'competitive programming',
+      'technical assessment', 'coding assessment'], 0, 100, 'score (0–100)'),
+
+    # ── Sales / business metrics ──────────────────────────────────────────
+    (['sales target', 'quota achievement', 'sales achievement',
+      'target %', 'target achievement', 'revenue generated',
+      'deals closed', 'conversion rate'], 0, 200, '% of target'),
+
+    # ── Physical / fitness (for relevant roles) ───────────────────────────
+    (['bmi', 'body mass index'], 10, 40, 'BMI (10–40)'),
+    (['fitness score', 'physical fitness',
+      'physical test', 'endurance score', 'stamina score'], 0, 100, 'score (0–100)'),
+
+    # ── Project / portfolio metrics ───────────────────────────────────────
+    (['projects completed', 'projects delivered', 'portfolio score',
+      'github stars', 'open source contributions', 'publications',
+      'research papers', 'patents'], 0, 50, 'count'),
+
+    # ── Certifications / badges ───────────────────────────────────────────
+    (['certifications', 'certificates', 'badges', 'credentials',
+      'number of certifications', 'professional certifications'], 0, 20, 'count'),
+
+    # ── Interview rounds / panel ─────────────────────────────────────────
+    (['interview score', 'interview rating', 'panel rating',
+      'technical interview', 'hr interview score',
+      'behavioural score', 'case study score'], 0, 10, '/10'),
+
+    # ── Referral / background check ───────────────────────────────────────
+    (['reference score', 'reference rating', 'background score',
+      'bgv score', 'background check'], 0, 10, '/10'),
+
+    # ── Willingness / intent ─────────────────────────────────────────────
+    (['relocation willingness', 'travel willingness', 'travel %',
+      'willingness to travel', 'willingness score'], 0, 100, '% (0–100)'),
+
+    # ── Tenure / stability ────────────────────────────────────────────────
+    (['average tenure', 'job stability', 'avg tenure years',
+      'longest tenure', 'retention probability'], 0, 10, 'yrs (0–10)'),
+
+    # ── Diversity / inclusion metrics (for aggregated pools) ─────────────
+    (['diversity score', 'inclusion score', 'd&i score'], 0, 100, 'score (0–100)'),
+
+    # ── General percentage catch-all (must stay near bottom) ─────────────
+    (['efficiency', 'accuracy', 'productivity', 'utilization',
+      'utilisation', 'pass rate', 'success rate', 'completion rate'], 0, 100, '% (0–100)'),
+]
+
+
+def detect_smart_scale(criteria_name):
+    """
+    Given a criteria name, return (min, max, label) if a known scale pattern matches.
+    Returns None if no match — caller should fall back to auto-scaling.
+    Short keywords (<=4 chars) require word-boundary match to avoid false positives
+    (e.g. 'age' matching 'average').
+    """
+    import re as _re
+    name_lower = criteria_name.lower().strip()
+    for keywords, mn, mx, label in _SMART_SCALES:
+        for kw in keywords:
+            kw_l = kw.lower()
+            if len(kw_l) <= 4:
+                # Word-boundary match for short keywords
+                if _re.search(r'\b' + _re.escape(kw_l) + r'\b', name_lower):
+                    return mn, mx, label
+            else:
+                if kw_l in name_lower:
+                    return mn, mx, label
+    return None
+
+
 def normalize_weights(criteria):
     """
     Convert raw weights (any whole numbers) to proportions summing to 1.
@@ -92,25 +275,49 @@ def get_bounds(criteria, candidates):
         user_min = c.get('scale_min')
         user_max = c.get('scale_max')
 
+        scale_source = 'auto'   # 'user' | 'smart' | 'auto'
+
         if user_min is not None and user_max is not None and user_max > user_min:
             mn = float(user_min)
             mx = float(user_max)
-            # Clamp actual values to scale — a candidate outside the defined
-            # range gets 0 or 1, not an out-of-bounds value
+            scale_source = 'user'
+
         else:
-            mn = actual_min
-            mx = actual_max
+            # Try smart scale — uses criteria name to pick a sensible range
+            smart = detect_smart_scale(c.get('name', ''))
+            if smart is not None:
+                s_min, s_max, _ = smart
+                # Only apply smart scale if it actually contains all candidates
+                # and the candidate range is at most 50% of the smart range
+                # (if candidates span a bigger range, auto-scale is more honest)
+                smart_range = s_max - s_min
+                cand_span   = actual_max - actual_min
+                fits_in_scale = (actual_min >= s_min and actual_max <= s_max)
+                spread_ratio  = (cand_span / smart_range) if smart_range > 0 else 1
+
+                if fits_in_scale and spread_ratio <= 0.70:
+                    mn = float(s_min)
+                    mx = float(s_max)
+                    scale_source = 'smart'
+                else:
+                    mn = actual_min
+                    mx = actual_max
+            else:
+                mn = actual_min
+                mx = actual_max
 
         value_range = mx - mn
         significance_threshold = max(abs(mx) * 0.01, 0.01)
         all_same = (value_range < significance_threshold)
 
         bounds[c['id']] = {
-            'min':      mn,
-            'max':      mx,
-            'range':    value_range,
-            'all_same': all_same,
-            'user_defined': (user_min is not None and user_max is not None),
+            'min':         mn,
+            'max':         mx,
+            'range':       value_range,
+            'all_same':    all_same,
+            'user_defined': scale_source == 'user',
+            'smart_scale':  scale_source == 'smart',
+            'scale_source': scale_source,
         }
     return bounds
 
@@ -145,13 +352,22 @@ def compute_scores(criteria, candidates):
 
     results = []
     for cand in candidates:
-        breakdown = {}   # criteria_id -> weighted normalized score
-        norm_vals = {}   # criteria_id -> normalized value (before weighting)
+        breakdown = {}      # criteria_id -> weighted normalized score
+        norm_vals = {}      # criteria_id -> normalized value (after cost inversion, used for scoring)
+        raw_scale_pos = {}  # criteria_id -> raw scale position 0-1 (before inversion, for display)
         total = 0.0
 
         for c in criteria:
             raw = _get_val(cand['values'], c['id'])
             b = bounds[c['id']]
+
+            # Raw scale position (benefit direction always) — for display only
+            if b['all_same']:
+                pos = 0.5
+            else:
+                pos = (float(raw) - b['min']) / (b['max'] - b['min'])
+                pos = round(max(0.0, min(1.0, pos)), 4)
+            raw_scale_pos[c['id']] = pos
 
             norm = normalize_value(
                 raw,
@@ -171,6 +387,7 @@ def compute_scores(criteria, candidates):
             'candidate_name': cand['name'],
             'raw_values':     dict(cand['values']),
             'norm_values':    norm_vals,
+            'raw_scale_pos':  raw_scale_pos,
             'breakdown':      breakdown,
             'total_score':    round(total, 4),
             'total_pct':      round(total * 100, 1),
@@ -187,6 +404,22 @@ def compute_scores(criteria, candidates):
             rank = i + 1
         r['rank'] = rank
         prev_score = r['total_score']
+
+    # ── Pool rank per criteria ─────────────────────────────────────────────
+    # For each criteria, rank candidates by their raw value (benefit: highest first;
+    # cost: lowest first). Stored as pool_rank[criteria_id] = 1-based rank.
+    # This lets the template show "Best in pool" alongside the absolute band label.
+    for c in criteria:
+        is_cost = c.get('is_cost', False)
+        # Build (candidate_id, raw_value) list
+        vals = [(r['candidate_id'], _get_val(r['raw_values'], c['id'])) for r in results]
+        # Sort: cost → ascending (lower=better), benefit → descending
+        vals_sorted = sorted(vals, key=lambda x: x[1], reverse=(not is_cost))
+        pool_order = {cid: i + 1 for i, (cid, _) in enumerate(vals_sorted)}
+        for r in results:
+            if 'pool_rank' not in r:
+                r['pool_rank'] = {}
+            r['pool_rank'][c['id']] = pool_order[r['candidate_id']]
 
     return results
 
@@ -290,6 +523,15 @@ def generate_narrative(role, criteria, scored_results, stated_vs_actual, is_stab
             f"{winner_pct}%{gap_desc} ahead of {runner['candidate_name']} "
             f"({runner['total_pct']}%)."
         )
+    elif num_candidates > 10:
+        # Large pool — compact, no name list
+        runner = scored_results[1]
+        p1 = (
+            f"Based on the weighted scoring analysis for the {role} role, "
+            f"{winner_name} ranked 1st with a score of {winner_pct}% across "
+            f"{num_candidates} candidates evaluated. "
+            f"The runner-up is {runner['candidate_name']} at {runner['total_pct']}%."
+        )
     else:
         others = ", ".join(r['candidate_name'] for r in scored_results[1:])
         p1 = (
@@ -331,35 +573,43 @@ def generate_narrative(role, criteria, scored_results, stated_vs_actual, is_stab
         )
 
     # ── Paragraph 3: Head-to-head comparison ─────────────────────────────────
-    comparisons = []
-    for c in criteria:
-        vals = [(r['candidate_name'], _get_val(r['raw_values'], c['id']),
-                 r['norm_values'].get(c['id'], 0)) for r in scored_results]
-        # Find best performer on this criteria
-        if c.get('is_cost'):
-            best = min(vals, key=lambda x: x[1])
-        else:
-            best = max(vals, key=lambda x: x[1])
+    # Skip detailed per-candidate comparison for large pools (>10 candidates)
+    if num_candidates > 10:
+        p3 = None  # suppressed — too verbose for large pools
+    else:
+        comparisons = []
+        for c in criteria:
+            vals = [(r['candidate_name'], _get_val(r['raw_values'], c['id']),
+                     r['norm_values'].get(c['id'], 0)) for r in scored_results]
+            if c.get('is_cost'):
+                best = min(vals, key=lambda x: x[1])
+            else:
+                best = max(vals, key=lambda x: x[1])
 
-        all_vals_str = ", ".join(f"{name}: {val}" for name, val, _ in vals)
-        direction = "lower" if c.get('is_cost') else "higher"
+            all_vals_str = ", ".join(f"{name}: {val}" for name, val, _ in vals)
+            direction = "lower" if c.get('is_cost') else "higher"
 
-        # Only note if winner led or lost on this criteria
-        if best[0] == winner_name:
-            comparisons.append(
-                f"On {c['name']}, {winner_name} led with {best[1]} ({direction} is better; candidates scored: {all_vals_str})."
-            )
-        else:
-            comparisons.append(
-                f"On {c['name']}, {best[0]} had the strongest result at {best[1]}, "
-                f"while {winner_name} scored {_get_val(winner['raw_values'], c['id'])} (candidates: {all_vals_str})."
-            )
-
-    p3 = "Looking at each criteria individually: " + " ".join(comparisons)
+            if best[0] == winner_name:
+                comparisons.append(
+                    f"On {c['name']}, {winner_name} led with {best[1]} ({direction} is better; candidates scored: {all_vals_str})."
+                )
+            else:
+                comparisons.append(
+                    f"On {c['name']}, {best[0]} had the strongest result at {best[1]}, "
+                    f"while {winner_name} scored {_get_val(winner['raw_values'], c['id'])} (candidates: {all_vals_str})."
+                )
+        p3 = "Looking at each criteria individually: " + " ".join(comparisons)
 
     # ── Paragraph 4: Blindspot / stated vs actual ─────────────────────────────
     blindspots = [row for row in stated_vs_actual if row['delta'] > 15]
-    if blindspots:
+    if num_candidates > 10:
+        # Compact for large pools
+        if blindspots:
+            bs_names = ", ".join(bs['name'] for bs in blindspots[:2])
+            p4 = f"Priority note: {bs_names} drove scores differently than their stated weights suggest. This is common in large pools where candidates cluster closely on certain criteria."
+        else:
+            p4 = "Priority alignment is good — criteria contributed close to their stated weights."
+    elif blindspots:
         bs_parts = []
         for bs in blindspots:
             if bs['actual_pct'] > bs['stated_pct']:
@@ -387,7 +637,12 @@ def generate_narrative(role, criteria, scored_results, stated_vs_actual, is_stab
         )
 
     # ── Paragraph 5: Sensitivity / confidence ────────────────────────────────
-    if is_stable:
+    if num_candidates > 10:
+        if is_stable:
+            p5 = f"This ranking is robust — {winner_name} leads consistently across weighting scenarios. You can proceed with confidence."
+        else:
+            p5 = f"This ranking is weight-sensitive. Small changes to criteria weights could shift the top result. Consider reviewing your priority weights before finalising."
+    elif is_stable:
         p5 = (
             f"This recommendation is robust. {stability_detail} "
             f"This means the decision does not depend on the precise weights you assigned — "
@@ -430,10 +685,17 @@ def run_scoring(criteria, candidates):
     scale_info = {}
     for c in criteria:
         b = bounds[c['id']]
+        smart_label = None
+        smart = detect_smart_scale(c.get('name', ''))
+        if smart and b.get('smart_scale'):
+            smart_label = smart[2]  # unit label e.g. '₹', 'yrs', 'score /100'
         scale_info[c['id']] = {
-            'user_defined': b.get('user_defined', False),
-            'min': b['min'],
-            'max': b['max'],
+            'user_defined':  b.get('user_defined', False),
+            'smart_scale':   b.get('smart_scale', False),
+            'scale_source':  b.get('scale_source', 'auto'),
+            'min':           b['min'],
+            'max':           b['max'],
+            'smart_label':   smart_label,
         }
 
     return {
@@ -445,6 +707,7 @@ def run_scoring(criteria, candidates):
         'score_gap':         score_gap,
         'top_candidate':     scored[0]['candidate_name'],
         'scale_info':        scale_info,
+        'num_candidates':    len(scored),
     }
 
 

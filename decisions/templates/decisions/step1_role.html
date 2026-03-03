@@ -12,12 +12,36 @@
     <p class="text-muted mb-4">This will be the title of your hiring scorecard.</p>
     <form method="post">
         {% csrf_token %}
-        <div class="mb-3">
+        <div class="mb-4">
             {{ form.role_title.label_tag }}
             {{ form.role_title }}
             {% if form.role_title.errors %}<div class="text-danger small mt-1">{{ form.role_title.errors }}</div>{% endif %}
         </div>
-        <button type="submit" class="btn btn-primary px-4">Next — Set Criteria →</button>
+
+        <!-- Two route buttons -->
+        <p class="text-muted small fw-semibold mb-2">How would you like to enter candidate data?</p>
+        <div class="row g-3">
+            <div class="col-md-6">
+                <button type="submit" name="route" value="manual"
+                        class="btn w-100 py-3 text-start"
+                        style="background:#f8f9fa;border:2px solid #dee2e6;border-radius:12px;transition:all 0.2s;"
+                        onmouseover="this.style.borderColor='#1A3A6E';this.style.background='#f0f5ff'"
+                        onmouseout="this.style.borderColor='#dee2e6';this.style.background='#f8f9fa'">
+                    <div class="fw-bold mb-1" style="color:#1A3A6E;">✏️ &nbsp;Enter manually</div>
+                    <div class="text-muted small">Set criteria, add candidates one by one — best for small groups.</div>
+                </button>
+            </div>
+            <div class="col-md-6">
+                <button type="submit" name="route" value="upload"
+                        class="btn w-100 py-3 text-start"
+                        style="background:#f0fdf4;border:2px solid #86efac;border-radius:12px;transition:all 0.2s;"
+                        onmouseover="this.style.borderColor='#1A5E35';this.style.background='#dcfce7'"
+                        onmouseout="this.style.borderColor='#86efac';this.style.background='#f0fdf4'">
+                    <div class="fw-bold mb-1" style="color:#1A5E35;">📂 &nbsp;Upload CSV / Excel</div>
+                    <div class="text-muted small">Upload a spreadsheet — headers become criteria, rows become candidates. Best for 10+ candidates.</div>
+                </button>
+            </div>
+        </div>
     </form>
 </div>
 {% endblock %}

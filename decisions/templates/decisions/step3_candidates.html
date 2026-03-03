@@ -25,7 +25,7 @@
                            name="ca-{{ forloop.counter0 }}-name"
                            id="ca-{{ forloop.counter0 }}-name"
                            value="{{ name }}"
-                           placeholder="Candidate name"
+                           
                            class="form-control"
                            required>
                     <button type="button" class="btn btn-outline-danger btn-sm remove-cand" style="min-width:36px;">✕</button>
@@ -34,12 +34,12 @@
             {% else %}
                 <div class="candidate-row d-flex gap-2 mb-2 align-items-center">
                     <span class="text-muted small fw-bold" style="width:24px; text-align:right;">1</span>
-                    <input type="text" name="ca-0-name" id="ca-0-name" placeholder="Candidate name" class="form-control" required>
+                    <input type="text" name="ca-0-name" id="ca-0-name"  class="form-control" required>
                     <button type="button" class="btn btn-outline-danger btn-sm remove-cand" style="min-width:36px;">✕</button>
                 </div>
                 <div class="candidate-row d-flex gap-2 mb-2 align-items-center">
                     <span class="text-muted small fw-bold" style="width:24px; text-align:right;">2</span>
-                    <input type="text" name="ca-1-name" id="ca-1-name" placeholder="Candidate name" class="form-control" required>
+                    <input type="text" name="ca-1-name" id="ca-1-name"  class="form-control" required>
                     <button type="button" class="btn btn-outline-danger btn-sm remove-cand" style="min-width:36px;">✕</button>
                 </div>
             {% endif %}
@@ -81,7 +81,7 @@ document.getElementById('add-candidate').addEventListener('click', () => {
     newRow.innerHTML = `
         <span class="text-muted small fw-bold" style="width:24px; text-align:right;">${idx + 1}</span>
         <input type="text" name="ca-${idx}-name" id="ca-${idx}-name"
-               placeholder="Candidate name" class="form-control" required>
+                class="form-control" required>
         <button type="button" class="btn btn-outline-danger btn-sm remove-cand" style="min-width:36px;">✕</button>
     `;
     container.appendChild(newRow);
