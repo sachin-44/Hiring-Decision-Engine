@@ -162,75 +162,32 @@ function setupToggle(idx) {
     refresh();
 }
 
-// Smart scale suggestions
-const SMART_SCALES = [
-    { kw:['test score','aptitude','written test','assessment score','gre','gmat','ielts','toefl'], min:0,  max:100,     hint:'Test score (0–100)' },
-    { kw:['experience','years of exp','work exp','relevant exp','total exp','exp years'],         min:0,  max:20,      hint:'Experience (0–20 yrs)' },
-    { kw:['salary','ctc','package','compensation','rupees','inr','lpa','lakh'],                   min:0,  max:1000000, hint:'Salary ₹ (0–10L)' },
-    { kw:['notice period','notice days','joining days'],                                          min:0,  max:180,     hint:'Notice period (0–180 days)' },
-    { kw:['notice weeks'],                                                                        min:0,  max:26,      hint:'Notice period (0–26 weeks)' },
-    { kw:['notice months'],                                                                       min:0,  max:6,       hint:'Notice period (0–6 months)' },
-    { kw:['communication','soft skill','leadership','teamwork','attitude','culture fit','rating'],min:0,  max:10,      hint:'Rating (0–10)' },
-    { kw:['age'],                                                                                 min:18, max:60,      hint:'Age (18–60 yrs)' },
-    { kw:['iq','cognitive'],                                                                      min:70, max:160,     hint:'IQ (70–160)' },
-];
-function detectScale(name) {
-    const n = name.toLowerCase();
-    return SMART_SCALES.find(s => s.kw.some(k => n.includes(k))) || null;
-}
-
-// Range preview: shows scale confirmation or smart chip
+// Range preview: shows "Scale: 0 → 10" hint when both fields filled
 function setupRangePreview(row) {
-    const minInp  = row.querySelector('input[name$="-scale_min"]');
-    const maxInp  = row.querySelector('input[name$="-scale_max"]');
-    const nameInp = row.querySelector('input[name$="-name"]');
+    const inputs = row.querySelectorAll('input[type=number]');
+    // scale_min is 3rd input, scale_max is 4th (after name, weight)
+    const minInp = row.querySelector('input[name$="-scale_min"]');
+    const maxInp = row.querySelector('input[name$="-scale_max"]');
     const preview = row.querySelector('.range-preview');
     if (!minInp || !maxInp || !preview) return;
-
-    let dismissed = false;
 
     function update() {
         const mn = minInp.value.trim();
         const mx = maxInp.value.trim();
-        const match = nameInp ? detectScale(nameInp.value) : null;
-
         if (mn !== '' && mx !== '') {
-            // Both filled — confirm
-            const valid = parseFloat(mx) > parseFloat(mn);
-            preview.innerHTML = valid
-                ? `<span style="color:#166534;">✓ Scale set: ${mn} → ${mx} &nbsp;(candidates scored proportionally within this range)</span>`
-                : `<span style="color:#b45309;">⚠ Max must be greater than Min</span>`;
+            preview.textContent = `✓ Scale set: ${mn} → ${mx}  (candidates scored proportionally within this range)`;
             preview.classList.remove('d-none');
-            return;
-        }
-        if (mn !== '' || mx !== '') {
-            preview.innerHTML = '<span style="color:#b45309;">Set both min and max to activate fixed scaling — or leave both blank.</span>';
+            preview.style.color = '#166534';
+        } else if (mn !== '' || mx !== '') {
+            preview.textContent = 'Set both min and max to activate fixed scaling — or leave both blank for auto-scaling.';
             preview.classList.remove('d-none');
-            return;
-        }
-        // Both empty — show smart chip if detected and not dismissed
-        if (match && !dismissed) {
-            preview.innerHTML = `
-                <span style="color:#1A3A6E;font-weight:600;">🎯 Smart scale detected: ${match.hint}</span>
-                &nbsp;
-                <button type="button" class="btn btn-sm py-0 px-2"
-                        style="font-size:0.72rem;background:#e8f0fe;border:1px solid #c7d8fa;color:#1A3A6E;border-radius:4px;"
-                        onclick="this.closest('.criteria-row').querySelector('input[name$=&quot;-scale_min&quot;]').value=${match.min};
-                                 this.closest('.criteria-row').querySelector('input[name$=&quot;-scale_max&quot;]').value=${match.max};
-                                 this.closest('.criteria-row').querySelector('input[name$=&quot;-scale_min&quot;]').dispatchEvent(new Event('input'));">
-                    Apply (${match.min}–${match.max})
-                </button>
-                <button type="button" style="background:none;border:none;color:#9ca3af;font-size:0.8rem;cursor:pointer;padding:0 4px;"
-                        onclick="this.parentElement.classList.add('d-none');">✕</button>`;
-            preview.classList.remove('d-none');
+            preview.style.color = '#b45309';
         } else {
             preview.classList.add('d-none');
         }
     }
-
     minInp.addEventListener('input', update);
     maxInp.addEventListener('input', update);
-    if (nameInp) nameInp.addEventListener('input', () => { dismissed = false; update(); });
     update();
 }
 
@@ -266,7 +223,8 @@ document.getElementById('add-criteria').addEventListener('click', () => {
     container.appendChild(newRow);
     totalForms.value = idx + 1;
     setupToggle(idx);
-    setupRangePreview(newRow);});
+    setupRangePreview(newRow);
+});
 
 // Remove row
 container.addEventListener('click', e => {

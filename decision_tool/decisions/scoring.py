@@ -40,59 +40,6 @@ FINAL SCORE:
 from django.conf import settings
 
 
-# ── Smart scale defaults ───────────────────────────────────────────────────────
-# Maps keyword patterns to (min, max, unit_label).
-# Applied automatically when user leaves scale_min/scale_max blank.
-# This prevents "4 vs 5 on a 10-point scale" from stretching to 0%–100%.
-
-_SMART_SCALES = [
-    # Test / aptitude scores
-    (['test score', 'aptitude', 'written test', 'assessment score',
-      'gre', 'gmat', 'ielts', 'toefl'], 0, 100, 'score /100'),
-
-    # Experience in years
-    (['experience', 'years of exp', 'work exp', 'relevant exp',
-      'total exp', 'exp years'], 0, 20, 'yrs'),
-
-    # Salary in INR / rupees — realistic range 0–10L (most hiring roles)
-    (['salary', 'ctc', 'package', 'compensation', 'rupees', 'inr',
-      'lpa', 'lakh'], 0, 1000000, '₹ (0–10L)'),
-
-    # Notice period — days
-    (['notice period', 'notice days', 'joining days'], 0, 180, 'days'),
-
-    # Notice period — weeks
-    (['notice weeks'], 0, 26, 'weeks'),
-
-    # Notice period — months
-    (['notice months', 'notice period (months)'], 0, 6, 'months'),
-
-    # Age
-    (['age'], 18, 60, 'yrs'),
-
-    # Communication / soft skill ratings (0–10)
-    (['communication', 'soft skill', 'leadership', 'teamwork',
-      'attitude', 'culture fit', 'rating', 'score /10', 'out of 10'], 0, 10, '/10'),
-
-    # IQ / cognitive
-    (['iq', 'cognitive'], 70, 160, 'pts'),
-]
-
-
-def detect_smart_scale(criteria_name):
-    """
-    Given a criteria name, return (min, max, label) if a known scale pattern matches.
-    Returns None if no match — caller should fall back to auto-scaling.
-    Matching is case-insensitive substring.
-    """
-    name_lower = criteria_name.lower().strip()
-    for keywords, mn, mx, label in _SMART_SCALES:
-        for kw in keywords:
-            if kw in name_lower:
-                return mn, mx, label
-    return None
-
-
 def normalize_weights(criteria):
     """
     Convert raw weights (any whole numbers) to proportions summing to 1.
@@ -145,49 +92,25 @@ def get_bounds(criteria, candidates):
         user_min = c.get('scale_min')
         user_max = c.get('scale_max')
 
-        scale_source = 'auto'   # 'user' | 'smart' | 'auto'
-
         if user_min is not None and user_max is not None and user_max > user_min:
             mn = float(user_min)
             mx = float(user_max)
-            scale_source = 'user'
-
+            # Clamp actual values to scale — a candidate outside the defined
+            # range gets 0 or 1, not an out-of-bounds value
         else:
-            # Try smart scale — uses criteria name to pick a sensible range
-            smart = detect_smart_scale(c.get('name', ''))
-            if smart is not None:
-                s_min, s_max, _ = smart
-                # Only apply smart scale if it actually contains all candidates
-                # and the candidate range is at most 50% of the smart range
-                # (if candidates span a bigger range, auto-scale is more honest)
-                smart_range = s_max - s_min
-                cand_span   = actual_max - actual_min
-                fits_in_scale = (actual_min >= s_min and actual_max <= s_max)
-                spread_ratio  = (cand_span / smart_range) if smart_range > 0 else 1
-
-                if fits_in_scale and spread_ratio <= 0.70:
-                    mn = float(s_min)
-                    mx = float(s_max)
-                    scale_source = 'smart'
-                else:
-                    mn = actual_min
-                    mx = actual_max
-            else:
-                mn = actual_min
-                mx = actual_max
+            mn = actual_min
+            mx = actual_max
 
         value_range = mx - mn
         significance_threshold = max(abs(mx) * 0.01, 0.01)
         all_same = (value_range < significance_threshold)
 
         bounds[c['id']] = {
-            'min':         mn,
-            'max':         mx,
-            'range':       value_range,
-            'all_same':    all_same,
-            'user_defined': scale_source == 'user',
-            'smart_scale':  scale_source == 'smart',
-            'scale_source': scale_source,
+            'min':      mn,
+            'max':      mx,
+            'range':    value_range,
+            'all_same': all_same,
+            'user_defined': (user_min is not None and user_max is not None),
         }
     return bounds
 
@@ -222,22 +145,13 @@ def compute_scores(criteria, candidates):
 
     results = []
     for cand in candidates:
-        breakdown = {}      # criteria_id -> weighted normalized score
-        norm_vals = {}      # criteria_id -> normalized value (after cost inversion, used for scoring)
-        raw_scale_pos = {}  # criteria_id -> raw scale position 0-1 (before inversion, for display)
+        breakdown = {}   # criteria_id -> weighted normalized score
+        norm_vals = {}   # criteria_id -> normalized value (before weighting)
         total = 0.0
 
         for c in criteria:
             raw = _get_val(cand['values'], c['id'])
             b = bounds[c['id']]
-
-            # Raw scale position (benefit direction always) — for display only
-            if b['all_same']:
-                pos = 0.5
-            else:
-                pos = (float(raw) - b['min']) / (b['max'] - b['min'])
-                pos = round(max(0.0, min(1.0, pos)), 4)
-            raw_scale_pos[c['id']] = pos
 
             norm = normalize_value(
                 raw,
@@ -257,7 +171,6 @@ def compute_scores(criteria, candidates):
             'candidate_name': cand['name'],
             'raw_values':     dict(cand['values']),
             'norm_values':    norm_vals,
-            'raw_scale_pos':  raw_scale_pos,
             'breakdown':      breakdown,
             'total_score':    round(total, 4),
             'total_pct':      round(total * 100, 1),
@@ -274,22 +187,6 @@ def compute_scores(criteria, candidates):
             rank = i + 1
         r['rank'] = rank
         prev_score = r['total_score']
-
-    # ── Pool rank per criteria ─────────────────────────────────────────────
-    # For each criteria, rank candidates by their raw value (benefit: highest first;
-    # cost: lowest first). Stored as pool_rank[criteria_id] = 1-based rank.
-    # This lets the template show "Best in pool" alongside the absolute band label.
-    for c in criteria:
-        is_cost = c.get('is_cost', False)
-        # Build (candidate_id, raw_value) list
-        vals = [(r['candidate_id'], _get_val(r['raw_values'], c['id'])) for r in results]
-        # Sort: cost → ascending (lower=better), benefit → descending
-        vals_sorted = sorted(vals, key=lambda x: x[1], reverse=(not is_cost))
-        pool_order = {cid: i + 1 for i, (cid, _) in enumerate(vals_sorted)}
-        for r in results:
-            if 'pool_rank' not in r:
-                r['pool_rank'] = {}
-            r['pool_rank'][c['id']] = pool_order[r['candidate_id']]
 
     return results
 
@@ -533,17 +430,10 @@ def run_scoring(criteria, candidates):
     scale_info = {}
     for c in criteria:
         b = bounds[c['id']]
-        smart_label = None
-        smart = detect_smart_scale(c.get('name', ''))
-        if smart and b.get('smart_scale'):
-            smart_label = smart[2]  # unit label e.g. '₹', 'yrs', 'score /100'
         scale_info[c['id']] = {
-            'user_defined':  b.get('user_defined', False),
-            'smart_scale':   b.get('smart_scale', False),
-            'scale_source':  b.get('scale_source', 'auto'),
-            'min':           b['min'],
-            'max':           b['max'],
-            'smart_label':   smart_label,
+            'user_defined': b.get('user_defined', False),
+            'min': b['min'],
+            'max': b['max'],
         }
 
     return {
@@ -555,7 +445,6 @@ def run_scoring(criteria, candidates):
         'score_gap':         score_gap,
         'top_candidate':     scored[0]['candidate_name'],
         'scale_info':        scale_info,
-        'num_candidates':    len(scored),
     }
 
 
