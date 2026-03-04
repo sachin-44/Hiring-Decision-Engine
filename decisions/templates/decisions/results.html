@@ -116,19 +116,7 @@
                   title="{{ c.name }}: smart scale {{ si.min|floatformat:0 }}–{{ si.max|floatformat:0 }}{% if si.smart_label %} {{ si.smart_label }}{% endif %}">&#127919; {{ c.name }}</span>
             {% endif %}{% endwith %}{% endfor %}
         </span>
-        {% if is_csv and result.num_candidates > 10 %}
-        <div class="d-flex align-items-center gap-2">
-            <span class="text-muted small">Show:</span>
-            <select id="rankShowSelect" class="form-select form-select-sm" style="width:auto;"
-                    data-default="{% if num_to_rank %}{{ num_to_rank }}{% else %}10{% endif %}">
-                {% if num_to_rank %}<option value="{{ num_to_rank }}">Top {{ num_to_rank }} (shortlist)</option>{% endif %}
-                {% if not num_to_rank or num_to_rank != 10 %}<option value="10">Top 10</option>{% endif %}
-                <option value="25">Top 25</option>
-                <option value="50">Top 50</option>
-                <option value="all">All {{ result.num_candidates }}</option>
-            </select>
-        </div>
-        {% endif %}
+
     </div>
     <div class="card-body px-4 py-2" id="ranking-list">
         {% for r in result.ranked %}
@@ -248,6 +236,86 @@
     </div>
 </div>
 {% endif %}
+
+
+<!-- ══════════════════════════════════════════════════ -->
+<!-- BEST PER CRITERIA                                  -->
+<!-- ══════════════════════════════════════════════════ -->
+<div class="card mb-4 border-0 shadow-sm">
+    <div class="card-header bg-white px-4 py-3" style="border-bottom:1px solid #eee;">
+        <div class="fw-semibold">🏆 Best Candidate Per Criteria</div>
+        <div class="text-muted small mt-1">Who leads in each individual factor — the overall winner may not dominate every area</div>
+    </div>
+    <div class="card-body px-4 py-3">
+        <div class="row g-3">
+        {% for c in criteria %}
+        {% with best_name="" best_val=None %}
+        {# Find candidate with highest raw value for this criteria #}
+        {% for r in result.ranked %}
+            {% with rv=r.raw_values|get_item:c.id %}
+            {% endwith %}
+        {% endfor %}
+
+        {# Use pool_rank=1 marker already computed by backend #}
+        <div class="col-md-6 col-lg-4">
+            <div class="p-3 rounded-3 h-100" style="background:#f8faff;border:1.5px solid #e2e8f0;">
+
+                <!-- Criteria name + direction -->
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                    <span class="fw-semibold" style="font-size:0.88rem;color:#1f2937;">{{ c.name }}</span>
+                    {% if c.is_cost %}
+                    <span class="badge" style="background:#fff8e1;color:#b45309;font-size:9px;border:1px solid #fde68a;">↓ lower</span>
+                    {% else %}
+                    <span class="badge" style="background:#f0fdf4;color:#166534;font-size:9px;border:1px solid #bbf7d0;">↑ higher</span>
+                    {% endif %}
+                </div>
+
+                <!-- Winner for this criteria -->
+                {% for r in result.ranked %}
+                {% with pr=r.pool_rank|get_item:c.id rv=r.raw_values|get_item:c.id %}
+                {% if pr == 1 %}
+                <div class="d-flex align-items-center gap-2 mt-1">
+                    <span style="background:#ffd700;color:#333;width:24px;height:24px;border-radius:50%;
+                                 display:inline-flex;align-items:center;justify-content:center;
+                                 font-size:0.75rem;font-weight:800;flex-shrink:0;">🥇</span>
+                    <div>
+                        <div class="fw-bold" style="font-size:0.95rem;color:#1A3A6E;">{{ r.candidate_name }}</div>
+                        <div class="text-muted" style="font-size:0.78rem;">{{ rv }}
+                            {% with si=result.scale_info|get_item:c.id %}
+                            {% if si.smart_label %} {{ si.smart_label }}{% endif %}
+                            {% endwith %}
+                        </div>
+                    </div>
+                    <!-- Overall rank badge -->
+                    <span class="ms-auto badge rounded-pill"
+                          style="background:#e8f0fe;color:#1A3A6E;font-size:0.72rem;">
+                        #{{ r.rank }} overall
+                    </span>
+                </div>
+
+                <!-- Mini bar showing their score on this criteria vs max possible -->
+                {% with bv=r.breakdown|get_item:c.id %}
+                <div class="mt-2" style="background:#e9ecef;border-radius:4px;height:6px;overflow:hidden;">
+                    <div style="background:{% if c.is_cost %}#f59e0b{% else %}#1A5E35{% endif %};
+                                height:100%;
+                                width:{% widthratio bv c.weight 100 %}%;
+                                border-radius:4px;"></div>
+                </div>
+                <div class="text-muted mt-1" style="font-size:0.7rem;">
+                    Contributes {{ bv|floatformat:2 }} pts of {{ c.weight }} max weight
+                </div>
+                {% endwith %}
+                {% endif %}
+                {% endwith %}
+                {% endfor %}
+
+            </div>
+        </div>
+        {% endwith %}
+        {% endfor %}
+        </div>
+    </div>
+</div>
 
 <!-- ══════════════════════════════════════════════════ -->
 <!-- 5. SCORE BREAKDOWN TABLE                          -->
@@ -518,15 +586,8 @@ function applyRankFilter(limitVal) {
     });
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-    const sel = document.getElementById('rankShowSelect');
-    if (sel) {
-        // Set the dropdown value from data-default, then apply filter
-        const defaultVal = sel.getAttribute('data-default');
-        sel.value = defaultVal;
-        applyRankFilter(defaultVal);
-        sel.addEventListener('change', () => applyRankFilter(sel.value));
-    } else if (IS_CSV && NUM_TO_RANK) {
+(function initPage() {
+    if (IS_CSV && NUM_TO_RANK) {
         applyRankFilter(NUM_TO_RANK);
     }
 
@@ -598,7 +659,7 @@ document.addEventListener('DOMContentLoaded', () => {
             alertZone.appendChild(div);
         });
     }
-});
+})();
 
 // ── What-if sliders ────────────────────────────────────────────────────────
 let debounceTimer;
