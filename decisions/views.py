@@ -98,6 +98,13 @@ def step3_candidates(request):
     if not request.session.get('criteria'):
         return redirect('step2_criteria')
 
+    # Always clear candidates on GET so previous runs don't bleed into manual flow
+    if request.method == 'GET':
+        request.session.pop('candidates', None)
+        request.session.pop('is_csv', None)
+        request.session.pop('num_to_rank', None)
+        request.session.modified = True
+
     error = None
 
     if request.method == 'POST':
