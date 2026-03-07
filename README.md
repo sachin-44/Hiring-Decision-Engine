@@ -116,6 +116,9 @@ Interactive weight sliders recalculate the ranking live. Turns the system from a
 
 ### Setup
 
+The project is deployed on render
+URL:https://hiring-decision-engine.onrender.com
+
 ```bash
 git clone https://github.com/sachin-44/Hiring-Decision-Engine.git
 cd Hiring-Decision-Engine
@@ -125,22 +128,10 @@ venv\Scripts\activate        # Windows
 source venv/bin/activate     # Mac / Linux
 
 pip install -r requirements.txt
-cp .env.example .env
 python manage.py migrate
 python manage.py runserver
 ```
-
 Open your browser: **http://127.0.0.1:8000**
-
-### Environment variables
-
-Create a `.env` file in the project root:
-
-```
-SECRET_KEY=your-secret-key-here
-DEBUG=True
-ALLOWED_HOSTS=127.0.0.1,localhost
-```
 
 ### Running tests
 
