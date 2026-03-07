@@ -1,0 +1,111 @@
++====================================================================================+
+|           DECISION LOGIC  --  run_scoring() Step by Step                           |
++====================================================================================+
+
+
+                         +---------------------------+
+                         |   run_scoring() called    |
+                         +---------------------------+
+                                      |
+                                      v
+                         +---------------------------+          + ------------------+
+                         |  Are there 2+ candidates? | ---No--> |   Return None     |                                  
+                         +---------------------------+          | (need at least 2) |
+                                      |                         +-------------------+                                                                                   
+                                     YES              
+                                      |               
+                                      v               
+                         +---------------------------+
+                         |  Normalize weights        |
+                         |---------------------------|
+                         |  User types: 40, 25, 20   |
+                         |  Engine converts to:      |
+                         |  0.40  0.29  0.24 ...     |
+                         |  (must sum to 1.0)        |
+                         +---------------------------+
+                                      |
+                                      v
+                         +----------------------------+
+                         |  Find min and max          |
+                         |  for each criterion        |
+                         |----------------------------|
+                         |  Tech Score: min=65 max=91 |
+                         |  CTC:        min=7  max=13 |
+                         |  Notice:     min=15 max=90 |
+                         +----------------------------+
+                                      |
+                                      v
+                         +-----------------------------+
+                         |  Normalize each value       |
+                         |  to a 0 to 1 scale          |
+                         |-----------------------------|
+                         |  Higher is better?          |
+                         | score = (val-min)/(max-min) |
+                         |                             |
+                         |  Lower is better?           |
+                         | score = (max-val)/(max-min) |
+                         |                             |
+                         |  All values identical?      |
+                         |  score = 0.5 for everyone   |
+                         +-----------------------------+
+                                      |
+                                      v
+                         +---------------------------+
+                         |  Calculate final score    |
+                         |---------------------------|
+                         |  score = sum of           |
+                         |  (normalized value        |
+                         |   x criterion weight)     |
+                         |  for all criteria         |
+                         +---------------------------+
+                                      |
+                                      v
+                         +---------------------------+
+                         |  Rank candidates          |
+                         |  by final score           |
+                         +---------------------------+
+                                      |
+                                      v
+                         +---------------------------+
+                         |  How big is the gap       |
+                         |  between rank 1 and 2?    |
+                         +---------------------------+
+                              |       |        |
+                           > 0.15  0.05-0.15  < 0.05
+                              |       |        |
+                              v       v        v
+                           STRONG MODERATE   FRAGILE
+                         (decide) (review) (re-interview)
+                                      |
+                                      v
+                         +----------------------------+
+                         |  Run sensitivity test      |
+                         |----------------------------|
+                         |  Nudge top weight by +5%   |
+                         |  Does rank 1 still win?    |
+                         |----------------------------|
+                         |  YES --> result is stable  |
+                         |  NO  --> flag as sensitive |
+                         +----------------------------+
+                                      |
+                                      v
+                         +----------------------------+
+                         |  Detect blind spots        |
+                         |----------------------------|
+                         |  For each criterion:       |
+                         |  does its contribution     |
+                         |  to the gap match its      |
+                         |  stated weight?            |
+                         |                            |
+                         |  If not -- flag it quietly |
+                         +----------------------------+
+                                      |
+                                      v
+                         +---------------------------+
+                         |  Return results           |
+                         |---------------------------|
+                         |  ranked candidates        |
+                         |  score breakdown          |
+                         |  stability label          |
+                         |  blind spot notes         |
+                         +---------------------------+

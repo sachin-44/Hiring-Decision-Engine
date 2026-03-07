@@ -1,0 +1,28 @@
++====================================================================================+
+|           HIRING DECISION ENGINE  --  SYSTEM ARCHITECTURE                          |
++====================================================================================+
+
+
+  +-------------+     +-------------+     +-------------+     +-------------+     +-------------+
+  |    INPUT    |     |  NORMALIZE  |     |    SCORE    |     |   ANALYSE   |     |   OUTPUT    |
+  |-------------|     |-------------|     |-------------|     |-------------|     |-------------|
+  | Role Title  | --> | Weights ->  | --> | Weighted    | --> | Stability   | --> | Ranked      |
+  | Criteria    |     | Proportions |     | Sum         |     | Margin      |     | Results     |
+  | Weights     |     | Min-Max per |     | Candidate   |     | Sensitivity |     | Written     |
+  | Candidate   |     | Criterion   |     | Ranking     |     | Test        |     | Narrative   |
+  | Values      |     | Cost/Benefit|     | Score Gap   |     | Blind Spot  |     | What-If     |
+  | CSV Upload  |     | Flip        |     | Pool Rank   |     | Confidence  |     | Sliders     |
+  |             |     | Scale Bounds|     |             |     |             |     | PDF Export  |
+  +-------------+     +-------------+     +-------------+     +-------------+     +-------------+
+        |                                       |
+        v                                       v
+  +------------------+                  +------------------+
+  | Django Session   |                  | SQLite Database  |
+  |------------------|                  |------------------|
+  | Live wizard      |                  | Saved decisions  |
+  | state between    |                  | Written only on  |
+  | steps            |                  | explicit save    |
+  +------------------+                  +------------------+
+
+
+  scoring.py  =  pure Python core  |  zero ORM dependency  |  independently testable
