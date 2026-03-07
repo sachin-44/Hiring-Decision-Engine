@@ -302,7 +302,7 @@ The answer: JSON does not preserve integer dictionary keys. `{1: value}` becomes
 
 ## Section 12 — The Tool I Used to Build the Tool
 
-Significant parts of this system were built in collaboration with Claude, Anthropic's AI assistant. The Django views, PDF export, CSV upload flow, landing page, and several of the bugs in the next section were worked through with AI assistance. This is not a disclaimer — it is a design decision worth examining honestly.
+Significant parts of this system were built in collaboration with Claude,ChatGPT,Anthropic's AI assistant. The Django views, PDF export, CSV upload flow, landing page, and several of the bugs in the next section were worked through with AI assistance. This is not a disclaimer — it is a design decision worth examining honestly.
 
 **Where AI was useful:** Syntax recall under pressure, boilerplate for structures I already understood conceptually, a second pair of eyes on logic I had been staring at too long. The session key bug — I described the symptom after forty minutes of searching. Claude identified the JSON serialization cause in one response. I would have found it eventually. I found it faster.
 
