@@ -1,267 +1,180 @@
-# Recruitment Companion — Hiring Decision Tool
+# Hiring Decision Engine
 
-A Django web application that helps recruiters make structured, data-driven hiring decisions using weighted multi-criteria scoring.
+> A structured, explainable hiring scoring engine built with Django.
+---
+
+## At a Glance
+
+| Layer | Technology | Purpose |
+|---|---|---|
+| Backend | Python 3.10+, Django 4.2 | Web framework, session management, routing |
+| Scoring Engine | Pure Python — `scoring.py` | Normalization, weighting, ranking, blind spot detection |
+| Frontend | Bootstrap 5, Vanilla JS | Responsive wizard UI, what-if sliders |
+| Data Storage | Django sessions + SQLite | Live state in session; saved decisions in DB |
+| Export | ReportLab (PDF), csv module | Downloadable decision reports and data exports |
+| Templates | Django templating + custom filters | `score_filters.py` handles score display logic |
 
 ---
 
-## How It Works
+## 1. Understanding the Problem
 
-1. **Define the role** — enter the job title
-2. **Set criteria** — add evaluation criteria, weights, and direction (higher or lower is better)
-3. **Add candidates** — list all candidates being compared
-4. **Enter values** — input raw actual values per candidate per criteria (e.g. salary=55000, experience=7, test score=82)
-5. **View results** — candidates are ranked by weighted normalised score with full breakdown
+Hiring decisions are among the most consequential choices an organisation makes. They are also among the least structured. Most hiring panels compare candidates on gut feel, informal notes, and post-hoc justification — inconsistent, hard to audit, and prone to bias.
 
----
+The core problem is not how to rank candidates. That is the easy part. The hard problems are:
 
-## Architecture Diagram
+| Problem | Why It Matters |
+|---|---|
+| Rankings don't reflect stated values | A manager who says Communication matters most may unknowingly build weights that optimise for salary |
+| Scale bias corrupts raw scoring | Salary in rupees drowns out a 1–10 communication score regardless of weights |
+| Confidence is invisible | A 0.02 margin and a 0.40 margin look identical in a ranked list |
+| Decisions can't be audited | Intuitive hiring has no paper trail; structured scoring does |
 
-> Shows how the system layers connect — browser, Django, scoring engine, and database.
-
-```mermaid
-graph TD
-    Browser["Browser\nBootstrap 5 UI"]
-
-    subgraph Django["Django Application"]
-        URLs["urls.py\nRoute dispatcher"]
-        Views["views.py\nStep 1-4 + Results\nAJAX recalculate"]
-        Forms["forms.py\nCriteriaForm\nCandidateValueForm"]
-        Templates["templates/\nstep1-4, results\nbase.html"]
-        Session["Django Session\nrole_title, criteria\ncandidates + values"]
-        Scoring["scoring.py\nPure Python engine\nno ORM dependency"]
-        Models["models.py\nHiringDecision\nHiringCriteria\nCandidate\nCandidateValue"]
-        Admin["admin.py\nDjango Admin"]
-    end
-
-    DB[("SQLite Database")]
-
-    Browser -->|HTTP Request| URLs
-    URLs --> Views
-    Views --> Forms
-    Views --> Templates
-    Views -->|read/write| Session
-    Views -->|run_scoring| Scoring
-    Views -->|save/load history| Models
-    Models -->|ORM| DB
-    Admin -->|manage| Models
-    Templates -->|HTML response| Browser
-```
+This system addresses all four. It is not a black box that produces a rank. It is a transparent scoring engine that shows its working at every step and surfaces conflicts between stated priorities and actual outcomes.
 
 ---
 
-## Data Flow Diagram
+## 2. Assumptions Made
 
-> Shows how raw input data travels through the system and becomes a ranked result.
+### About the data
+- All candidate values are numeric. Qualitative traits like "strong communicator" must be expressed as a number (e.g. 7/10) before entry.
+- Values are entered by a human who has already gathered them. The system is a scoring tool, not a data collection tool.
+- All values within a criterion are in consistent units. If one candidate's salary is in GBP and another's in INR, the system cannot detect that. Unit consistency is the hiring manager's responsibility.
 
-```mermaid
-flowchart LR
-    U(["User Input"])
+### About weights
+- Weights express relative importance, not absolute magnitudes. A weight of 40 and a weight of 4 produce identical results if all other weights scale proportionally. The system normalises weights to proportions internally.
+- Weights are subjective and potentially imprecise — which is exactly why sensitivity analysis is built in.
 
-    subgraph Step2["Step 2 — Criteria"]
-        C1["Salary — weight 40 — lower is better"]
-        C2["Experience — weight 30 — higher is better"]
-        C3["Test Score — weight 30 — higher is better"]
-    end
-
-    subgraph Step4["Step 4 — Raw Values"]
-        V1["Alice: 400000 / 4 / 75"]
-        V2["Roslin: 200000 / 3 / 74"]
-    end
-
-    subgraph Engine["scoring.py"]
-        NW["normalize_weights\n40,30,30 → 0.4, 0.3, 0.3"]
-        GB["get_bounds\nmin/max per criteria\n1% significance threshold"]
-        NV["normalize_value\nmin-max normalization\nis_cost inverts scale"]
-        CS["compute_scores\nnorm x weight → total_score"]
-        CC["compute_contributions\nweighted share per criteria"]
-        RS["run_sensitivity\nplus/minus 10% weight test\nstability flag"]
-    end
-
-    subgraph Output["Results Page"]
-        R1["Rank 1: Alice 60%"]
-        R2["Rank 2: Roslin 40%"]
-        BD["Score Breakdown\nraw → rank 0-1 → pts"]
-        ST["Stable result flag"]
-        WI["What-if sliders\nAJAX recalculate"]
-    end
-
-    U --> Step2
-    U --> Step4
-    Step2 --> NW
-    Step2 --> GB
-    Step4 --> GB
-    NW --> CS
-    GB --> NV
-    NV --> CS
-    CS --> CC
-    CS --> RS
-    CC --> BD
-    RS --> ST
-    CS --> R1
-    CS --> R2
-    WI -->|updated weights| NW
-```
+### About the scoring model
+- The model is **compensatory**. Strong performance on one criterion can offset weakness on another. This is appropriate for most hiring decisions. Non-negotiable minimums are handled by the planned constraint filter.
+- Two candidates with identical scores are treated as tied. A tie at this precision level is a genuine signal to reconsider weights or conduct further evaluation.
 
 ---
 
-## Component Diagram
+## 3. Why the Solution Is Structured This Way
 
-> Shows all files in the project and how they depend on each other.
+### Four-step wizard, not a single form
+A single form asking for role, criteria, candidates, and values simultaneously overwhelms users and produces errors. The wizard separates concerns into digestible steps, each building on the previous. Session storage carries state between steps without a database write until the user explicitly saves.
 
-```mermaid
-graph LR
-    subgraph Project["decision_tool/ — Django Project Config"]
-        S["settings.py\nSENSITIVITY_DELTA\nSTABILITY_THRESHOLD"]
-        PU["urls.py — root routing"]
-    end
+### Pure Python scoring engine
+The entire scoring logic lives in `scoring.py` with no Django ORM dependency. It can be tested independently with plain Python, imported into any context, and modified without touching the web layer. **Separating the engine from the framework was the most important architectural decision in the project.**
 
-    subgraph App["decisions/ — Main App"]
-        MO["models.py\nHiringDecision\nHiringCriteria\nCandidate\nCandidateValue"]
-        FO["forms.py\nRoleTitleForm\nCriteriaForm\nCandidateNameForm\nCandidateValueForm"]
-        VI["views.py\nstep1_role\nstep2_criteria\nstep3_candidates\nstep4_values\nresults\nrecalculate\nsave_decision"]
-        SC["scoring.py\nnormalize_weights\nget_bounds\nnormalize_value\ncompute_scores\ncompute_contributions\nrun_sensitivity\nrun_scoring"]
-        AD["admin.py"]
-        UR["urls.py — 10 routes"]
-        TT["templatetags/score_filters.py\nget_item\nscore_bar_width\nzip_with"]
-        TE["tests.py\n30+ unit and integration tests"]
-    end
+### Session-first, database-second
+Candidate data lives in the Django session during active use. The database is written only when the user explicitly saves a decision. This keeps the common path fast, avoids half-written records, and means an abandoned session leaves no debris in the database.
 
-    subgraph Templates["templates/decisions/"]
-        B["base.html"]
-        T1["step1_role.html"]
-        T2["step2_criteria.html"]
-        T3["step3_candidates.html"]
-        T4["step4_values.html"]
-        TR["results.html"]
-        TL["decision_list.html"]
-    end
+### Raw values, not ratings
+Users enter actual data — `salary=55000`, `experience=7`, `test_score=82` — not pre-summarised 1–10 ratings. Pre-summarising before the system sees it loses information and introduces subjectivity at the worst possible moment: the input stage. Normalisation happens inside the engine, not in the user's head.
 
-    PU --> UR
-    UR --> VI
-    VI --> FO
-    VI --> SC
-    VI --> MO
-    VI --> Templates
-    SC --> S
-    B --> T1 & T2 & T3 & T4 & TR & TL
-    TR --> TT
-    T4 --> TT
-    AD --> MO
-    TE --> SC
-    TE --> VI
-```
+### CSV upload for large candidate pools
+Manual entry works for small decisions. Real hiring involves large applicant pools. The CSV upload accepts 100+ candidates, maps columns to criteria using 255 keyword patterns across 35+ criteria types, and processes the entire pool in a single run. The hiring manager specifies a shortlist size; the top N are surfaced for review.
 
 ---
 
-## Decision Logic Diagram
+## 4. Design Decisions and Trade-offs
 
-> Shows exactly how the scoring engine calculates a candidate's final score step by step.
+### Min-max normalization over z-score
 
-```mermaid
-flowchart TD
-    A(["START: run_scoring(criteria, candidates)"])
-    B{"Less than\n2 candidates?"}
-    NONE(["Return None — cannot score"])
-    C["normalize_weights\nDivide each weight by total\n40+30+30=100 → 0.4, 0.3, 0.3"]
-    D["get_bounds per criteria\nFind min and max value\nacross ALL candidates"]
-    E{"Is the range less than\n1% of max value?\ne.g. 75.0 vs 75.1"}
-    F["Treat as tied\nnorm = 0.5 for all\nDifference is noise"]
-    G{"is_cost = True?\ne.g. Salary, Notice Period"}
-    H["norm = (max - value) / (max - min)\nLower raw value scores higher"]
-    I["norm = (value - min) / (max - min)\nHigher raw value scores higher"]
-    J["weighted_pts = norm x normalised_weight\ne.g. 1.0 x 0.4 = 0.400 pts"]
-    K["total_score = sum of all weighted_pts\ne.g. 0.0 + 0.3 + 0.3 = 0.600"]
-    L["Sort by total_score descending\nAssign ranks — ties get same rank"]
-    M["compute_contributions\nEach criteria share of total score %"]
-    N["run_sensitivity\nShift each weight plus/minus 10%\nCount rank changes"]
-    O{"Rank changes in more\nthan 50% of tests?"}
-    P["is_stable = False\nWarn: result is sensitive\nto weight changes"]
-    Q["is_stable = True\nResult is robust"]
-    R(["RETURN ranked candidates\nbreakdown, contributions\nstability detail, score_gap"])
+| | Min-Max (chosen) | Z-Score (rejected) |
+|---|---|---|
+| Output range | Always 0 to 1 | Unbounded, can be negative |
+| Interpretability | Any manager can verify manually | Requires statistical knowledge |
+| Direction handling | Built-in cost/benefit inversion | Requires manual pre-processing |
+| Trade-off | Sensitive to small candidate pools | Robust to outliers but unreadable |
 
-    A --> B
-    B -->|Yes| NONE
-    B -->|No| C
-    C --> D
-    D --> E
-    E -->|Yes| F
-    E -->|No| G
-    F --> J
-    G -->|Yes| H
-    G -->|No| I
-    H --> J
-    I --> J
-    J --> K
-    K --> L
-    L --> M
-    M --> N
-    N --> O
-    O -->|Yes| P
-    O -->|No| Q
-    P --> R
-    Q --> R
-```
+> **The accepted trade-off:** Min-max stretches a small candidate gap to the full 0–1 scale. Mitigated by user-defined scale bounds — set a realistic market range (e.g. 0–10 years) and the gap shrinks to its true proportional size.
+
+### Quiet blind spot notes, not alerts
+When a low-weight criterion drives more than 40% of the ranking gap, the system surfaces a quiet factual note rather than a warning. Early versions used confrontational language that triggered defensiveness rather than reflection. Same information, no judgment — the decision-maker draws their own conclusion.
+
+### Written narrative alongside scores
+The results page includes an auto-generated plain English explanation of the recommendation — what drove it, how confident the system is, where the decision is sensitive. Numbers alone are insufficient for high-stakes decisions. A hiring manager presenting to a leadership team needs words, not a score.
+
+### What-if sliders
+Interactive weight sliders recalculate the ranking live. Turns the system from a one-time calculator into an exploration tool — asking not just *"who won?"* but *"under what conditions could someone else win?"*
 
 ---
 
-## Setup
+## 5. Edge Cases Considered
+
+| Edge Case | What Happens | Why This Approach |
+|---|---|---|
+| All candidates share the same value for a criterion | System assigns 0.5 to all; shows a note that this criterion had no discriminating power | Prevents division-by-zero; correctly signals the criterion is irrelevant in this pool |
+| Only two candidates | Min-max assigns 1.0 and 0.0 per criterion — small gaps appear decisive | User-defined scale bounds mitigate this; stability margin flags fragile results |
+| Cost criteria (salary, notice period) | Normalization formula is inverted: lowest raw value scores 1.0 | The `is_cost` flag is set by the manager at setup; inversion is automatic |
+| Very close scores (gap < 0.05) | Result is flagged as fragile; second interview recommended | A 0.02 margin gives false confidence; the system names that explicitly |
+| Session expiry mid-wizard | User redirected to step one; data is lost | Known limitation; auto-save to database planned for next version |
+| Weights summing to zero | Form enforces minimum weight of 1 at field level | A zero-weight criterion has no influence and should not be in the model |
+| 100+ candidates via CSV | Smart scale detection applies realistic bounds; shortlist size limits the results view | Prevents large pools from artificially compressing all candidates toward the mean |
+
+---
+
+## 6. How to Run the Project
+
+### Prerequisites
+- Python 3.10 or higher
+- pip
+- Git
+
+### Setup
 
 ```bash
-git clone https://github.com/yourusername/recruitment-companion.git
-cd recruitment-companion/decision_tool
+git clone https://github.com/sachin-44/Hiring-Decision-Engine.git
+cd Hiring-Decision-Engine
+
+python -m venv venv
+venv\Scripts\activate        # Windows
+source venv/bin/activate     # Mac / Linux
 
 pip install -r requirements.txt
 cp .env.example .env
-
 python manage.py migrate
 python manage.py runserver
 ```
 
-Visit `http://127.0.0.1:8000`
+Open your browser: **http://127.0.0.1:8000**
 
----
+### Environment variables
 
-## Scoring Formula
-
-```
-normalised_weight_i  =  weight_i / sum(all weights)
-
-norm_value           =  (value - min) / (max - min)        # higher is better
-norm_value           =  (max - value) / (max - min)        # lower is better (is_cost)
-norm_value           =  0.5                                # all candidates identical
-
-candidate_score      =  sum( norm_value_i x normalised_weight_i )
-final_score_%        =  candidate_score x 100
-```
-
----
-
-## Project Structure
+Create a `.env` file in the project root:
 
 ```
-decision_tool/
+SECRET_KEY=your-secret-key-here
+DEBUG=True
+ALLOWED_HOSTS=127.0.0.1,localhost
+```
+
+### Running tests
+
+```bash
+python manage.py test decisions
+```
+
+### Project structure
+
+```
+Hiring-Decision-Engine/
 ├── decision_tool/
-│   ├── settings.py
+│   ├── settings.py          # SENSITIVITY_DELTA, STABILITY_THRESHOLD
 │   ├── urls.py
 │   └── wsgi.py
 ├── decisions/
-│   ├── models.py
-│   ├── views.py
-│   ├── forms.py
-│   ├── scoring.py
-│   ├── admin.py
+│   ├── scoring.py           # Core engine — no ORM dependency
+│   ├── views.py             # Wizard steps, CSV upload, PDF/CSV export
+│   ├── forms.py             # Criteria and candidate value forms
+│   ├── models.py            # HiringDecision, HiringCriteria, Candidate, CandidateValue
 │   ├── urls.py
-│   ├── tests.py
+│   ├── admin.py
+│   ├── tests.py             # Unit and regression tests
 │   ├── templatetags/
-│   │   └── score_filters.py
+│   │   └── score_filters.py # Custom display filters
 │   └── templates/decisions/
 │       ├── base.html
+│       ├── landing.html
 │       ├── step1_role.html
 │       ├── step2_criteria.html
 │       ├── step3_candidates.html
-│       ├── step4_values.html
+│       ├── step4_ratings.html
 │       ├── results.html
-│       └── decision_list.html
+│       └── upload_csv.html
 ├── manage.py
 ├── requirements.txt
 └── .env.example
@@ -269,12 +182,60 @@ decision_tool/
 
 ---
 
-## Tech Stack
+## 7. What I Would Improve With More Time
 
-| Layer | Technology |
+| Improvement | What It Does | Why Not Yet |
+|---|---|---|
+| Hard constraint pre-filter | Remove candidates below minimum thresholds before scoring, with clear rejection reasons | A filter without feedback is worse than no filter; feedback layer design not yet complete |
+| Pairwise weight calibration (AHP) | Derive weights through structured comparisons rather than direct number entry | Requires 10+ questions upfront for 5 criteria — too much friction for first-time users |
+| Team consensus mode | Multiple evaluators score independently; system surfaces agreements and disagreements | Requires session isolation per evaluator and a merge layer — would have required restructuring mid-build |
+| Dynamic sensitivity threshold | Show exact weight delta needed to flip the ranking, not binary stable/fragile | Requires solving a constrained optimisation problem; current perturbation test is directionally correct |
+| Authentication and audit trail | Login system, decision history, compliance PDF export per decision | Intentionally deferred to keep setup friction low; designed and roadmapped |
+| ATS integration via REST API | Accept candidate data from Greenhouse / Workday without manual CSV upload | Requires API layer and authentication; out of scope for this build phase |
+
+---
+
+## 8. Known Limitations
+
+| Limitation | Detail |
 |---|---|
-| Backend | Python 3.13, Django 4.2 |
-| Frontend | Bootstrap 5, Vanilla JS |
-| Database | SQLite |
-| Scoring Engine | Pure Python — no external ML libraries |
-| Session Management | Django session framework |
+| No hard constraint pre-filter | Candidates failing minimum thresholds are scored alongside qualifying candidates. Fully designed, intentionally not shipped — a half-built filter that silently eliminates candidates is worse than none. |
+| Session expiry loses progress | If a Django session expires between steps, all data is lost. No auto-save or expiry warning. Future version would persist progress to the database at each step. |
+| Numeric values only | Qualitative assessments must be converted to numbers before entry. The system does not guide this conversion, introducing subjectivity for non-numeric criteria. |
+| Single evaluator only | Session architecture assumes one decision-maker. Multiple evaluators cannot collaborate; disagreements are invisible to the system. |
+| Bias is not detected, only amplified | The engine scores what it is given. Biased input criteria produce biased rankings with mathematical precision. |
+| Git history reflects learning | The commit history includes an accidental deletion and immediate restore during a git learning exercise. The codebase is complete and correct. The history is honest. |
+
+---
+
+## Scoring Formula — Quick Reference
+
+Every number on the results page derives from these four steps.
+
+**Step 1 — Normalize weights**
+```
+w'i = wi / Σ(wi)
+```
+Raw weights (e.g. 40, 30, 30) become proportions summing to 1.0 (e.g. 0.40, 0.30, 0.30).
+
+**Step 2 — Normalize candidate values**
+```
+Benefit criteria:   r'ij = (rij − min_i) / (max_i − min_i)
+Cost criteria:      r'ij = (max_i − rij) / (max_i − min_i)
+Identical values:   r'ij = 0.5  (non-discriminating criterion)
+```
+Each value scaled to 0–1. If user-defined bounds are set, those are used instead of candidate min/max.
+
+**Step 3 — Calculate weighted points**
+```
+points_ij = r'ij × w'i
+```
+A criterion with weight 40 can contribute at most 0.40 points to the total score.
+
+**Step 4 — Sum to total score**
+```
+Sj = Σ(points_ij)   for all criteria i
+```
+Total score is between 0.0 and 1.0, displayed as a percentage. The gap between the top two scores determines stability: **Strong** (> 0.15), **Moderate** (0.05–0.15), or **Fragile** (< 0.05).
+
+---
