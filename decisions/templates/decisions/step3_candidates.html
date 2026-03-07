@@ -49,6 +49,18 @@
             + Add another candidate
         </button>
 
+        <div class="mb-4 p-3" style="background:#f8f9ff;border:1px solid #dee2f5;border-radius:8px;max-width:420px">
+            <label class="form-label fw-semibold mb-1">
+                How many candidates do you want to shortlist?
+            </label>
+            <p class="text-muted small mb-2">
+                The top N will be highlighted in results, the written report, and exports.
+            </p>
+            <input type="number" name="num_to_rank" value="1" min="1"
+                   class="form-control" style="width:120px"
+                   placeholder="e.g. 3">
+        </div>
+
         <div class="d-flex gap-3">
             <a href="{% url 'step2_criteria' %}" class="btn btn-outline-secondary">← Back</a>
             <button type="submit" class="btn btn-primary px-4">Next — Enter Values →</button>

@@ -26,6 +26,10 @@ def _build_scoring_input(session):
 
 # ── Step 1: Role title ────────────────────────────────────────────────────────
 
+
+def landing(request):
+    return render(request, 'decisions/landing.html')
+
 def step1_role(request):
     if request.method == 'POST':
         form = RoleTitleForm(request.POST)
@@ -125,6 +129,12 @@ def step3_candidates(request):
             error = "Please add at least 2 candidates."
         else:
             request.session['candidates'] = candidates_data
+            try:
+                num_to_rank = max(1, min(int(request.POST.get('num_to_rank', 1)), len(candidates_data)))
+            except (ValueError, TypeError):
+                num_to_rank = 1
+            request.session['num_to_rank'] = num_to_rank
+            request.session['is_csv'] = False
             request.session.modified = True
             return redirect('step4_values')
 
@@ -237,12 +247,58 @@ def results(request):
             f"It had more influence than intended."
         )
 
+    num_to_rank = request.session.get('num_to_rank', None)
+
+    # tie_unresolved = True only when there IS an exact tie AND the number of
+    # positions to fill is fewer than the number of tied candidates.
+    # If num_to_rank >= tied count, everyone fits — the tie doesn't matter.
+    if result.get('is_exact_tie'):
+        top_pct     = result['ranked'][0]['total_pct']
+        tied_count  = sum(1 for r in result['ranked'] if r['total_pct'] == top_pct)
+        tie_unresolved = (num_to_rank is None) or (num_to_rank < tied_count)
+    else:
+        tie_unresolved = False
+
+    # Compute cutoff_index — the 1-based forloop position after which the dashed
+    # shortlist line draws. Extends past num_to_rank if tied candidates share that rank.
+    result['cutoff_index'] = result.pop('_compute_cutoff')(result['ranked'], num_to_rank)
+
+    # cutoff_tie = True when the last shortlisted candidate and the first
+    # non-shortlisted candidate share the same score — alphabetical order
+    # was used as the tiebreaker to decide who makes the cut.
+    cutoff_tie = False
+    if num_to_rank and not result.get('is_exact_tie'):
+        ranked = result['ranked']
+        if num_to_rank < len(ranked):
+            last_in   = ranked[num_to_rank - 1]   # last shortlisted
+            first_out = ranked[num_to_rank]        # first not shortlisted
+            if last_in['total_pct'] == first_out['total_pct']:
+                cutoff_tie = True
+                # Append a note to the written narrative explaining the tiebreaker
+                cutoff_note = (
+                    f"\n\nNote on shortlist position {num_to_rank}: "
+                    f"{last_in['candidate_name']} and {first_out['candidate_name']} "
+                    f"received an identical score of {last_in['total_pct']}%. "
+                    f"Because the scoring model cannot distinguish between them, "
+                    f"{last_in['candidate_name']} was placed in position {num_to_rank} "
+                    f"solely on the basis of alphabetical ordering — this does not reflect "
+                    f"any scoring advantage. To make a merit-based selection between these two, "
+                    f"consider adding a new criterion, adjusting the weights, or running a "
+                    f"further interview."
+                )
+                if isinstance(result.get('narrative'), dict):
+                    result['narrative']['recommendation'] = result['narrative'].get('recommendation', '') + cutoff_note
+                else:
+                    result['narrative'] = result.get('narrative', '') + cutoff_note
+
     return render(request, 'decisions/results.html', {
-        'role':          role,
-        'result':        result,
-        'criteria':      criteria,
-        'is_csv':        request.session.get('is_csv', False),
-        'num_to_rank':   request.session.get('num_to_rank', None),
+        'role':            role,
+        'result':          result,
+        'criteria':        criteria,
+        'is_csv':          request.session.get('is_csv', False),
+        'num_to_rank':     num_to_rank,
+        'tie_unresolved':  tie_unresolved,
+        'cutoff_tie':      cutoff_tie,
     })
 
 
@@ -881,10 +937,10 @@ def export_pdf(request):
     s_white_title = S('WT', fontSize=20, textColor=WHITE, fontName='Helvetica-Bold', leading=24)
     s_white_sub   = S('WS', fontSize=9,  textColor=colors.HexColor('#93c5fd'), fontName='Helvetica', leading=13)
     s_white_muted = S('WM', fontSize=8.5, textColor=colors.HexColor('#bfdbfe'), fontName='Helvetica')
-    s_h1  = S('H1', fontSize=13, textColor=NAVY, fontName='Helvetica-Bold', spaceBefore=14, spaceAfter=7, leading=16)
+    s_h1  = S('H1', fontSize=13, textColor=NAVY, fontName='Helvetica-Bold', spaceBefore=16, spaceAfter=4, leading=16)
     s_h2  = S('H2', fontSize=10, textColor=NAVY, fontName='Helvetica-Bold', spaceBefore=10, spaceAfter=4, leading=13)
     s_body = S('BD', fontSize=9.5, textColor=TEXT, leading=15, spaceAfter=6)
-    s_sm  = S('SM', fontSize=8,   textColor=MUTED, leading=11)
+    s_sm  = S('SM', fontSize=8,   textColor=MUTED, leading=11, spaceAfter=2)
     s_tbl_hdr = S('TH', fontSize=8, textColor=WHITE, fontName='Helvetica-Bold', leading=10, alignment=TA_CENTER)
     s_tbl_hdr_l = S('THL', fontSize=8, textColor=WHITE, fontName='Helvetica-Bold', leading=10)
     s_tbl_c   = S('TC', fontSize=8.5, textColor=TEXT, leading=11, alignment=TA_CENTER)
@@ -966,7 +1022,36 @@ def export_pdf(request):
     # ─────────────────────────────────────────────────────────────────────
     # SECTION 3: WINNER / SHORTLIST BOX
     # ─────────────────────────────────────────────────────────────────────
-    if shortlist_n == 1:
+    is_tie = result.get('is_exact_tie', False)
+
+    if is_tie:
+        # Tied result — list all tied candidates, no false winner
+        tied_names = [r['candidate_name'] for r in ranked if r['total_pct'] == winner['total_pct']]
+        tied_str   = "  ·  ".join(tied_names)
+        PURPLE     = colors.HexColor('#6d28d9')
+        PURPLE_L   = colors.HexColor('#ede9fe')
+        winner_inner = Table(
+            [[Paragraph("🤝  Tied Result — No Decision Made",
+                        S('TT', fontSize=14, textColor=WHITE, fontName='Helvetica-Bold', leading=18)),
+              Paragraph(f"{winner['total_pct']}%",
+                        S('TP2', fontSize=28, textColor=WHITE, fontName='Helvetica-Bold',
+                          alignment=TA_RIGHT, leading=32))],
+             [Paragraph(
+                f"All candidates scored identically. Listed alphabetically: {tied_str}.",
+                S('TS', fontSize=8.5, textColor=colors.HexColor('#bfdbfe'), fontName='Helvetica', leading=12)),
+              Paragraph(f"of {n_cands} candidates",
+                        S('TC2', fontSize=8.5, textColor=colors.HexColor('#bfdbfe'),
+                          alignment=TA_RIGHT, leading=11))]],
+            colWidths=[IW * 0.70, IW * 0.30]
+        )
+        winner_inner.setStyle(TableStyle([
+            ('TOPPADDING',   (0,0), (-1,-1), 5),
+            ('BOTTOMPADDING',(0,0), (-1,-1), 5),
+            ('LEFTPADDING',  (0,0), (-1,-1), 0),
+            ('RIGHTPADDING', (0,0), (-1,-1), 0),
+            ('VALIGN',       (0,0), (-1,-1), 'MIDDLE'),
+        ]))
+    elif shortlist_n == 1:
         # Single winner — clean two-column layout
         winner_inner = Table(
             [[Paragraph(winner['candidate_name'],
@@ -1073,9 +1158,10 @@ def export_pdf(request):
     show_n = min(shortlist_n + 14, 40, n_cands)
     if n_cands > show_n:
         story.append(Paragraph(f"Showing top {show_n} of {n_cands} candidates.", s_sm))
-        story.append(Spacer(1, 4))
+    story.append(Spacer(1, 6))
 
     # Column widths: Rank | Candidate | Score | Bar (progress) | Status
+    # Left-align heading with table by matching left margin of table
     CW = [1.1*cm, W*0.36, 1.5*cm, W*0.28, 1.8*cm]
 
     rank_hdr = [

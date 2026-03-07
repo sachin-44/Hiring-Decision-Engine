@@ -393,8 +393,8 @@ def compute_scores(criteria, candidates):
             'total_pct':      round(total * 100, 1),
         })
 
-    # Sort highest score first
-    results.sort(key=lambda x: x['total_score'], reverse=True)
+    # Sort highest score first; break ties alphabetically by candidate name
+    results.sort(key=lambda x: (-x['total_score'], x['candidate_name'].lower()))
 
     # Assign ranks — tie-aware
     prev_score = None
@@ -404,6 +404,15 @@ def compute_scores(criteria, candidates):
             rank = i + 1
         r['rank'] = rank
         prev_score = r['total_score']
+
+    # Flag ties at rank 1
+    # Use total_pct (the display value, rounded to 1dp) as the tie criterion.
+    # Two candidates are tied if they show the same % on screen — that is the
+    # only tie that matters to a hiring manager reading the results.
+    top_pct = results[0]['total_pct'] if results else None
+    top_tied = [r for r in results if r['total_pct'] == top_pct]
+    for r in results:
+        r['is_tied_first'] = (r['total_pct'] == top_pct and len(top_tied) > 1)
 
     # ── Pool rank per criteria ─────────────────────────────────────────────
     # For each criteria, rank candidates by their raw value (benefit: highest first;
@@ -506,7 +515,32 @@ def generate_narrative(role, criteria, scored_results, stated_vs_actual, is_stab
     bounds = {c['id']: {} for c in criteria}
 
     # ── Paragraph 1: Recommendation ──────────────────────────────────────────
-    if num_candidates == 2:
+    is_exact_tie = (score_gap is not None and abs(score_gap) < 0.0001)
+
+    if is_exact_tie:
+        # All tied candidates share the same score — list them all
+        tied_names = [r['candidate_name'] for r in scored_results if r['total_pct'] == winner_pct]
+        tied_list  = ", ".join(tied_names)
+        p1 = (
+            f"Based on the weighted scoring analysis for the {role} role, "
+            f"all evaluated candidates produced an identical score of {winner_pct}%. "
+            f"The scoring model cannot distinguish between them on the current criteria and values. "
+            f"Because no scoring basis exists to separate the candidates, they have been listed "
+            f"in alphabetical order: {tied_list}. "
+            f"{winner_name} appears first solely due to alphabetical ordering — "
+            f"this does not indicate any scoring advantage. "
+            f"To break this tie, consider adding a new criterion, adjusting the weights, "
+            f"or running a fresh evaluation with additional data points. "
+            f"If a further review is not possible and an immediate decision is required, "
+            f"you may proceed with {winner_name} as the selection on the basis of alphabetical precedence — "
+            f"the same last-resort convention used in competitive examinations such as AIIMS when "
+            f"candidates produce identical scores across all evaluated parameters. "
+            f"However, this should be treated as the weakest possible basis for a hiring decision. "
+            f"Alphabetical order carries no information about candidate quality, suitability, or fit — "
+            f"it is a purely arbitrary tiebreaker of last resort, and the outcome should be documented "
+            f"as such for any HR or audit record."
+        )
+    elif num_candidates == 2:
         runner = scored_results[1]
         gap_desc = ""
         if score_gap is not None:
@@ -541,36 +575,102 @@ def generate_narrative(role, criteria, scored_results, stated_vs_actual, is_stab
         )
 
     # ── Paragraph 2: What drove the decision ─────────────────────────────────
-    # Sort criteria by their actual contribution to winner's score
-    winner_breakdown = winner['breakdown']
-    sorted_criteria = sorted(criteria, key=lambda c: winner_breakdown.get(c['id'], 0), reverse=True)
-    top_criteria = sorted_criteria[0]
-    top_raw = _get_val(winner['raw_values'], top_criteria['id'])
-    top_norm = winner['norm_values'].get(top_criteria['id'], 0)
+    # FIX: After Django session JSON, all dict keys become strings.
+    # c['id'] is int, so .get(c['id']) always returns None — must try both.
+    def _bd(d, cid):
+        """Lookup by int or str key — handles session JSON serialisation."""
+        v = d.get(cid)
+        if v is None:
+            v = d.get(str(cid))
+        return v or 0.0
 
-    direction_word = "lower" if top_criteria.get('is_cost') else "higher"
-    performance_word = "best" if top_norm >= 0.8 else ("well" if top_norm >= 0.5 else "moderately")
+    def criteria_best(c):
+        """Who topped this criteria? Uses pool_rank (already direction-aware)."""
+        cid = c['id']
+        for r in scored_results:
+            pr = r.get('pool_rank', {})
+            rank = pr.get(cid) if pr.get(cid) is not None else pr.get(str(cid))
+            if rank == 1:
+                return r['candidate_name'], _get_val(r['raw_values'], cid)
+        return None, None
 
     total_weight = sum(c['weight'] for c in criteria)
-    top_weight_pct = round(top_criteria['weight'] / total_weight * 100, 0)
 
-    p2 = (
-        f"The most influential factor in this decision was {top_criteria['name']} "
-        f"(weighted at {int(top_weight_pct)}% of the total score). "
-        f"{winner_name} performed {performance_word} on this criteria with a value of {top_raw}, "
-        f"where {direction_word} values are preferred. "
-    )
-
-    # Add second most influential if it exists
-    if len(sorted_criteria) > 1:
-        second = sorted_criteria[1]
-        second_raw = _get_val(winner['raw_values'], second['id'])
-        second_norm = winner['norm_values'].get(second['id'], 0)
-        second_word = "strongly" if second_norm >= 0.8 else ("adequately" if second_norm >= 0.5 else "less competitively")
-        p2 += (
-            f"The second most weighted factor was {second['name']}, "
-            f"where {winner_name} scored {second_word} with a value of {second_raw}."
+    if is_exact_tie:
+        # Explain WHY the tie happened — walk through each criteria showing how
+        # different raw values produced the same weighted score.
+        criteria_by_weight = sorted(criteria, key=lambda c: c['weight'], reverse=True)
+        breakdown_parts = []
+        for c in criteria_by_weight[:4]:   # top 4 by weight to keep it readable
+            cid = c['id']
+            vals = [(r['candidate_name'], _get_val(r['raw_values'], cid)) for r in scored_results]
+            val_str = ", ".join(f"{name}: {val}" for name, val in vals)
+            direction = "lower" if c.get('is_cost') else "higher"
+            wt_pct = round(c['weight'] / total_weight * 100, 0)
+            breakdown_parts.append(
+                f"{c['name']} (weight {int(wt_pct)}%, {direction} is better — {val_str})"
+            )
+        criteria_summary = "; ".join(breakdown_parts)
+        p2 = (
+            f"Because all candidates produced an identical final score, there is no single "
+            f"deciding factor to report — every criteria contributed equally to all candidates' totals. "
+            f"This can happen when candidates' advantages on individual criteria exactly cancel each other out "
+            f"after weighting and normalisation. "
+            f"The highest-weighted criteria were: {criteria_summary}. "
+            f"To surface a meaningful difference, try adjusting the weights to reflect your true priorities, "
+            f"adding a new distinguishing criterion, or using the What-if sliders below to explore "
+            f"which weighting scenario would favour one candidate over the other."
         )
+    else:
+        winner_breakdown = winner['breakdown']
+        # Use _bd so string keys after session JSON don't return 0 for everything
+        sorted_criteria = sorted(criteria, key=lambda c: _bd(winner_breakdown, c['id']), reverse=True)
+
+        top_criteria = sorted_criteria[0]
+        top_raw_winner = _get_val(winner['raw_values'], top_criteria['id'])
+        top_norm = _bd(winner['norm_values'], top_criteria['id'])
+        top_best_name, top_best_val = criteria_best(top_criteria)
+        direction_word = "lower" if top_criteria.get('is_cost') else "higher"
+        top_weight_pct = round(top_criteria['weight'] / total_weight * 100, 0)
+
+        winner_tops = (top_best_name == winner_name)
+        if winner_tops:
+            perf = "best" if top_norm >= 0.8 else ("well" if top_norm >= 0.5 else "moderately")
+            p2 = (
+                f"The most influential factor in this decision was {top_criteria['name']} "
+                f"(weighted at {int(top_weight_pct)}% of the total score). "
+                f"{winner_name} performed {perf} here with a value of {top_raw_winner}, "
+                f"where {direction_word} values are preferred. "
+            )
+        else:
+            perf = "well" if top_norm >= 0.7 else ("adequately" if top_norm >= 0.4 else "below the leader")
+            p2 = (
+                f"The most influential factor in this decision was {top_criteria['name']} "
+                f"(weighted at {int(top_weight_pct)}% of the total score), where {direction_word} values are preferred. "
+                f"{top_best_name} led this criteria with a value of {top_best_val}, "
+                f"while {winner_name} scored {perf} at {top_raw_winner}. "
+                f"{winner_name}'s overall lead came from stronger performance across other criteria. "
+            )
+
+        # Add second most influential criteria
+        if len(sorted_criteria) > 1:
+            second = sorted_criteria[1]
+            second_raw_winner = _get_val(winner['raw_values'], second['id'])
+            second_norm = _bd(winner['norm_values'], second['id'])
+            second_best_name, second_best_val = criteria_best(second)
+            second_direction = "lower" if second.get('is_cost') else "higher"
+            if second_best_name == winner_name:
+                sw = "strongly" if second_norm >= 0.8 else ("well" if second_norm >= 0.5 else "adequately")
+                p2 += (
+                    f"The second most weighted factor was {second['name']}, "
+                    f"where {winner_name} scored {sw} with a value of {second_raw_winner}."
+                )
+            else:
+                p2 += (
+                    f"The second most weighted factor was {second['name']} (where {second_direction} is better) — "
+                    f"{second_best_name} led with {second_best_val}, "
+                    f"while {winner_name} recorded {second_raw_winner}."
+                )
 
     # ── Paragraph 3: Head-to-head comparison ─────────────────────────────────
     # Skip detailed per-candidate comparison for large pools (>10 candidates)
@@ -637,7 +737,18 @@ def generate_narrative(role, criteria, scored_results, stated_vs_actual, is_stab
         )
 
     # ── Paragraph 5: Sensitivity / confidence ────────────────────────────────
-    if num_candidates > 10:
+    if is_exact_tie:
+        p5 = (
+            f"A confidence assessment does not apply here because no decision was made — "
+            f"both candidates scored identically and the model cannot prefer one over the other. "
+            f"Sensitivity testing in this context is not meaningful: any shift in weights will "
+            f"favour whichever candidate has a higher raw value on the criteria being boosted, "
+            f"rather than confirming a genuine overall lead. "
+            f"Use the What-if sliders below to explore which candidate would emerge if you "
+            f"increased any particular weight — that exploration may help you identify your "
+            f"true priority and break the tie intentionally."
+        )
+    elif num_candidates > 10:
         if is_stable:
             p5 = f"This ranking is robust — {winner_name} leads consistently across weighting scenarios. You can proceed with confidence."
         else:
@@ -698,6 +809,50 @@ def run_scoring(criteria, candidates):
             'smart_label':   smart_label,
         }
 
+    # ── Best candidate per criteria ──────────────────────────────────────────
+    best_per_criteria = []
+    for c in criteria:
+        cid = c['id']
+        best_r = None
+        for r in scored:
+            pr = r.get('pool_rank', {})
+            rank = pr.get(cid) if pr.get(cid) is not None else pr.get(str(cid))
+            if rank == 1:
+                best_r = r
+                break
+        if not best_r:
+            continue
+        pts    = best_r['breakdown'].get(cid, 0) or best_r['breakdown'].get(str(cid), 0)
+        weight = c['weight']
+        si     = scale_info.get(cid) or scale_info.get(str(cid)) or {}
+        best_per_criteria.append({
+            'criteria_name':     c['name'],
+            'is_cost':           c.get('is_cost', False),
+            'best_name':         best_r['candidate_name'],
+            'best_val':          _get_val(best_r['raw_values'], cid),
+            'best_overall_rank': best_r['rank'],
+            'pts':               round(float(pts), 3),
+            'weight':            weight,
+            'bar_pct':           min(round(float(pts)/float(weight)*100, 1), 100) if weight else 0,
+            'smart_label':       si.get('smart_label', '') or '',
+        })
+
+    # ── Cutoff index for shortlist dashed line ───────────────────────────────
+    # The dashed line should appear after the LAST candidate sharing the same
+    # rank as the num_to_rank-th position — so tied candidates at the boundary
+    # are never split mid-group.
+    # We compute this here so the template just uses result.cutoff_index.
+    # Default (no num_to_rank) is None — template hides the line.
+    def compute_cutoff_index(ranked, num_to_rank):
+        if not num_to_rank or num_to_rank >= len(ranked):
+            return None
+        boundary_rank = ranked[num_to_rank - 1]['rank']  # rank of last shortlisted slot
+        # Walk forward until rank changes — last position sharing boundary_rank
+        idx = num_to_rank
+        while idx < len(ranked) and ranked[idx]['rank'] == boundary_rank:
+            idx += 1
+        return idx  # 1-based forloop.counter equals this when the line should draw
+
     return {
         'ranked':            scored,
         'stated_vs_actual':  stated_vs_actual,
@@ -705,9 +860,13 @@ def run_scoring(criteria, candidates):
         'stability_detail':  stability_detail,
         'dominant_criteria': dominant,
         'score_gap':         score_gap,
+        'is_exact_tie':      (score_gap is not None and abs(score_gap) < 0.0001),
         'top_candidate':     scored[0]['candidate_name'],
         'scale_info':        scale_info,
         'num_candidates':    len(scored),
+        'best_per_criteria': best_per_criteria,
+        'cutoff_index':      None,  # filled in by results view after num_to_rank is known
+        '_compute_cutoff':   compute_cutoff_index,  # callable passed through for view to use
     }
 
 

@@ -35,6 +35,7 @@
         <p class="text-muted small mb-0">Weighted scoring analysis · {{ result.ranked|length }} candidates evaluated</p>
     </div>
     <div class="d-flex gap-2">
+        {% if not result.is_exact_tie or num_to_rank and num_to_rank >= result.num_candidates %}
         <a href="{% url 'export_csv' %}" class="btn btn-sm btn-outline-primary no-print"
            title="{% if is_csv and num_to_rank %}Download top {{ num_to_rank }} shortlisted candidates{% else %}Download all candidates as CSV{% endif %}">
             ⬇ Export CSV{% if is_csv and num_to_rank %} (Top {{ num_to_rank }}){% endif %}
@@ -43,8 +44,14 @@
            title="Download full results as PDF">
             📄 Export PDF
         </a>
+        {% else %}
+        <span class="btn btn-sm btn-outline-secondary no-print disabled"
+              title="Export is not available — candidates are tied and positions are fewer than candidates. No fair decision has been made."
+              style="opacity:0.45;cursor:not-allowed;">
+            ⬇ Export unavailable — tied result
+        </span>
+        {% endif %}
         <button onclick="window.print()" class="btn btn-sm btn-outline-secondary no-print">Print</button>
-        <a href="{% url 'start_over' %}" class="btn btn-sm btn-outline-danger no-print">Start Over</a>
     </div>
 </div>
 
@@ -78,9 +85,43 @@
             {% endif %}{% endfor %}
         </div>
         <div style="color:rgba(255,255,255,0.4);font-size:0.79rem;">Ranked by highest weighted score &middot; #1 is the strongest match</div>
+        {% if cutoff_tie %}
+        <div style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.18);border-radius:8px;padding:8px 14px;margin-top:10px;font-size:0.78rem;color:rgba(255,255,255,0.7);">
+            &#x1F524; <strong style="color:#fff;">Alphabetical tiebreaker applied</strong> &mdash;
+            the last shortlisted position was decided by name order, not score.
+            Both candidates had an identical score. Consider a further interview to make a merit-based selection.
+        </div>
+        {% endif %}
 
         {% else %}
-        <!-- SINGLE WINNER: clean bold display -->
+        {% if result.is_exact_tie %}
+        <!-- TIE STATE -->
+        <div class="d-flex align-items-center gap-4">
+            <div class="flex-shrink-0 rounded-circle d-flex align-items-center justify-content-center"
+                 style="width:62px;height:62px;background:rgba(255,255,255,0.12);font-size:1.75rem;">&#x1F91D;</div>
+            <div class="flex-grow-1 overflow-hidden">
+                <div class="text-white-50 fw-semibold text-uppercase mb-1" style="font-size:0.7rem;letter-spacing:0.1em;">Tied Result</div>
+                <div class="text-white fw-bold" style="font-size:2.1rem;line-height:1.15;letter-spacing:-0.5px;">These candidates are tied</div>
+                <div style="color:rgba(255,255,255,0.4);font-size:0.81rem;margin-top:3px;">
+                    All criteria values are identical — the scoring model cannot distinguish between them.
+                </div>
+                <div class="d-flex flex-wrap gap-2 mt-3">
+                    {% for r in result.ranked %}{% if r.rank == 1 %}
+                    <div style="background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.25);
+                                border-radius:50px;padding:4px 14px;display:inline-flex;align-items:center;gap:8px;">
+                        <span class="text-white fw-semibold" style="font-size:0.9rem;">{{ r.candidate_name }}</span>
+                        <span style="color:rgba(255,255,255,0.5);font-size:0.8rem;">{{ r.total_pct }}%</span>
+                    </div>
+                    {% endif %}{% endfor %}
+                </div>
+            </div>
+            <div class="flex-shrink-0 text-center ps-4" style="border-left:1px solid rgba(255,255,255,0.12);">
+                <div class="text-white fw-bold" style="font-size:2.6rem;line-height:1;letter-spacing:-1.5px;">{{ winner.total_pct }}%</div>
+                <div style="color:rgba(255,255,255,0.4);font-size:0.73rem;margin-top:2px;text-transform:uppercase;letter-spacing:0.06em;">tied score</div>
+            </div>
+        </div>
+        {% else %}
+        <!-- SINGLE WINNER -->
         <div class="d-flex align-items-center gap-4">
             <div class="flex-shrink-0 rounded-circle d-flex align-items-center justify-content-center"
                  style="width:62px;height:62px;background:rgba(255,255,255,0.12);font-size:1.75rem;">&#x1F947;</div>
@@ -100,6 +141,7 @@
                 <div style="color:rgba(255,255,255,0.4);font-size:0.73rem;margin-top:2px;text-transform:uppercase;letter-spacing:0.06em;">overall score</div>
             </div>
         </div>
+        {% endif %}
         {% endif %}
 
     </div>
@@ -122,24 +164,36 @@
         {% endif %}
     </div>
     <div class="card-body px-4 py-3" id="ranking-list">
+        {# ambiguous_tie = tie exists AND positions < total candidates — only then is shortlisting misleading #}
+        {% with ambiguous_tie=result.is_exact_tie %}
         {% for r in result.ranked %}
+        {% if ambiguous_tie and num_to_rank and num_to_rank >= result.num_candidates %}
+            {# num_to_rank covers all tied candidates — treat as normal shortlist, no suppression #}
+        {% endif %}
         <div class="d-flex align-items-center gap-4 py-3 ranking-row"
              data-pct="{{ r.total_pct }}"
              data-rank="{{ forloop.counter }}"
-             style="{% if num_to_rank and forloop.counter == num_to_rank %}border-bottom:2px dashed #86efac;margin-bottom:4px;{% endif %}
-                    {% if r.rank == 1 %}background:#f0f7ff;border-radius:10px;padding-left:1rem;padding-right:1rem;{% endif %}">
+             style="{% if num_to_rank and forloop.counter == result.cutoff_index and not ambiguous_tie or num_to_rank and forloop.counter == result.cutoff_index and num_to_rank >= result.num_candidates %}border-bottom:2px dashed #86efac;margin-bottom:4px;{% endif %}
+                    {% if r.rank == 1 and not ambiguous_tie %}background:#f0f7ff;border-radius:10px;padding-left:1rem;padding-right:1rem;{% endif %}
+                    {% if ambiguous_tie and not num_to_rank or ambiguous_tie and num_to_rank < result.num_candidates %}background:#f5f3ff;border-radius:10px;padding-left:1rem;padding-right:1rem;{% endif %}">
             <div class="flex-shrink-0">
-                <span class="rank-badge rank-{{ r.rank }}">{{ r.rank }}</span>
+                <span class="rank-badge rank-{{ r.rank }}"
+                      style="{% if ambiguous_tie and not num_to_rank or ambiguous_tie and num_to_rank < result.num_candidates %}background:#7c3aed;color:#fff;{% endif %}">{{ r.rank }}</span>
             </div>
-            <div style="min-width:140px;" class="fw-bold {% if r.rank == 1 %}fs-5{% endif %}">
+            <div style="min-width:140px;" class="fw-bold {% if r.rank == 1 and not ambiguous_tie %}fs-5{% endif %}">
                 {{ r.candidate_name }}
                 {% if num_to_rank and forloop.counter <= num_to_rank %}
-                <span style="font-size:0.68rem;background:#dcfce7;color:#166534;border-radius:4px;padding:1px 6px;font-weight:600;margin-left:4px;">✓ Shortlisted</span>
+                    {% if not ambiguous_tie or num_to_rank >= result.num_candidates %}
+                    <span style="font-size:0.68rem;background:#dcfce7;color:#166534;border-radius:4px;padding:1px 6px;font-weight:600;margin-left:4px;">✓ Shortlisted</span>
+                    {% if cutoff_tie and forloop.counter == num_to_rank %}
+                    <span title="Tied with next candidate — selected alphabetically" style="font-size:0.65rem;background:#fef9c3;color:#854d0e;border-radius:4px;padding:1px 6px;font-weight:600;margin-left:3px;cursor:help;">A↓ Alphabetical</span>
+                    {% endif %}
+                    {% endif %}
                 {% endif %}
             </div>
             <div class="flex-grow-1">
                 <div style="background:#e9ecef;border-radius:6px;height:10px;overflow:hidden;">
-                    <div style="background:{% if num_to_rank and forloop.counter <= num_to_rank %}#1A5E35{% elif r.rank == 1 %}#1A3A6E{% elif r.rank == 2 %}#6c757d{% else %}#adb5bd{% endif %};
+                    <div style="background:{% if ambiguous_tie and not num_to_rank or ambiguous_tie and num_to_rank < result.num_candidates %}#7c3aed{% elif num_to_rank and forloop.counter <= num_to_rank %}#1A5E35{% elif r.rank == 1 %}#1A3A6E{% elif r.rank == 2 %}#6c757d{% else %}#adb5bd{% endif %};
                                 height:100%;width:{{ r.total_pct }}%;border-radius:6px;"></div>
                 </div>
             </div>
@@ -153,6 +207,7 @@
         </div>
         {% endif %}
         {% endfor %}
+        {% endwith %}
     </div>
 </div>
 
@@ -161,9 +216,14 @@
 <!-- ══════════════════════════════════════════════════ -->
 <div class="row g-3 mb-4">
     <div class="col-md-6">
-        {% if result.is_stable %}
+        {% if result.is_exact_tie %}
+        <div class="h-100 rounded p-4 border-0 shadow-sm" style="background:#f5f3ff;border-left:4px solid #7c3aed!important;">
+            <div class="fw-bold mb-1" style="color:#6d28d9;">🤝 Stability Test Not Applicable</div>
+            <div class="small text-dark">Both candidates scored identically — shifting weights will simply favour whichever candidate has a higher raw value on the boosted criterion. There is no stable winner to confirm.</div>
+        </div>
+        {% elif result.is_stable %}
         <div class="h-100 rounded p-4 border-0 shadow-sm" style="background:#f0fdf4;border-left:4px solid #16a34a!important;">
-            <div class="fw-bold mb-1" style="color:#166534;">🟢 Stable Decision</div>
+            <div class="fw-bold mb-1" style="color:#166634;">🟢 Stable Decision</div>
             <div class="small text-dark">{{ result.stability_detail }}</div>
         </div>
         {% else %}
@@ -175,7 +235,10 @@
     </div>
     <div class="col-md-6">
         <div class="h-100 rounded p-4 border-0 shadow-sm" style="background:#f8f9fa;">
-            {% if result.score_gap is not None and result.score_gap < 0.05 %}
+            {% if result.is_exact_tie %}
+            <div class="fw-bold mb-1" style="color:#6d28d9;">🤝 Exact Tie</div>
+            <div class="small text-dark">Both candidates scored identically. No scoring basis to prefer one over the other.</div>
+            {% elif result.score_gap is not None and result.score_gap < 0.05 %}
             <div class="fw-bold mb-1" style="color:#1e40af;">⚠️ Very Close Call</div>
             <div class="small text-dark">Top two differ by only {{ result.score_gap|floatformat:3 }} pts. Consider a second interview.</div>
             {% else %}
@@ -211,7 +274,9 @@
         </div>
         <hr style="border-color:#eee;">
         <div class="{% if is_csv %}mb-0{% else %}mb-4{% endif %}">
-            <div class="fw-bold mb-2" style="color:#1A3A6E;">🎯 What Drove This Decision</div>
+            <div class="fw-bold mb-2" style="color:#1A3A6E;">
+                {% if result.is_exact_tie %}🔍 Why the Score is Identical{% else %}🎯 What Drove This Decision{% endif %}
+            </div>
             <p class="mb-0">{{ result.narrative.decision_drivers }}</p>
         </div>
 
@@ -230,8 +295,8 @@
         </div>
         <hr style="border-color:#eee;">
         <div>
-            <div class="fw-bold mb-2" style="color:{% if result.is_stable %}#1A5E35{% else %}#c0392b{% endif %};">
-                {% if result.is_stable %}🟢{% else %}🟡{% endif %} Confidence Assessment
+            <div class="fw-bold mb-2" style="color:{% if result.is_exact_tie %}#6d28d9{% elif result.is_stable %}#1A5E35{% else %}#c0392b{% endif %};">
+                {% if result.is_exact_tie %}🤝 No Confidence Assessment — Tie{% elif result.is_stable %}🟢{% else %}🟡{% endif %} {% if not result.is_exact_tie %}Confidence Assessment{% endif %}
             </div>
             <p class="mb-0">{{ result.narrative.confidence_assessment }}</p>
         </div>
@@ -244,6 +309,7 @@
 <!-- ══════════════════════════════════════════════════ -->
 <!-- BEST CANDIDATE PER CRITERIA                       -->
 <!-- ══════════════════════════════════════════════════ -->
+{% if not result.is_exact_tie %}
 <div class="card mb-4 border-0 shadow-sm">
     <div class="card-header bg-white px-4 py-3" style="border-bottom:1px solid #eee;">
         <div class="fw-semibold">🏆 Best Candidate Per Criteria</div>
@@ -284,6 +350,7 @@
         </div>
     </div>
 </div>
+{% endif %}
 
 <!-- ══════════════════════════════════════════════════ -->
 <!-- 5. SCORE BREAKDOWN TABLE                          -->
@@ -397,7 +464,8 @@
                             {% endif %}
                         {% endif %}
 
-                        <!-- LAYER 2: Relative rank within this pool -->
+                        <!-- LAYER 2: Relative rank within this pool — hidden on exact tie -->
+                        {% if not result.is_exact_tie %}
                         {% if pr == 1 %}
                             <div class="mb-2" style="background:#dcfce7;color:#166534;border:1px solid #86efac;
                                  border-radius:20px;padding:2px 9px;font-size:0.72rem;font-weight:700;display:inline-block;">
@@ -413,6 +481,7 @@
                                  border-radius:20px;padding:2px 9px;font-size:0.72rem;font-weight:600;display:inline-block;">
                                 #{{ pr }} in pool
                             </div>
+                        {% endif %}
                         {% endif %}
 
                         <!-- Points contribution — 3 decimal places to show fine differences -->
@@ -569,9 +638,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // ── Gap badges between ranking rows ───────────────────────────────────
     document.querySelectorAll('.gap-badge-label').forEach((el, i) => {
         if (i + 1 >= rankData.length) return;
-        const gap = rankData[i].pct - rankData[i + 1].pct;
+        const gap = Math.round((rankData[i].pct - rankData[i + 1].pct) * 10) / 10;
         let label, bg, color, border;
-        if (gap >= 15) {
+        if (gap === 0) {
+            label = `🤝 Exact tie — no scoring difference`;
+            bg='#f5f3ff'; color='#6d28d9'; border='#c4b5fd';
+        } else if (gap >= 15) {
             label = `▼ Large lead — ${gap.toFixed(1)}% ahead`;
             bg='#fef2f2'; color='#991b1b'; border='#fca5a5';
         } else if (gap >= 7) {

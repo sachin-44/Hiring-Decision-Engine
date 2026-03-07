@@ -28,18 +28,21 @@
     </style>
 </head>
 <body>
-<nav class="navbar navbar-light bg-white border-bottom no-print mb-4">
-    <div class="container">
-        <a class="navbar-brand d-flex align-items-center gap-2" href="{% url 'step1_role' %}"
-       style="text-decoration:none;">
-        <span style="background:linear-gradient(135deg,#1A3A6E,#2563eb);color:#fff;
-                     width:30px;height:30px;border-radius:8px;display:inline-flex;
-                     align-items:center;justify-content:center;font-size:1rem;font-weight:700;">H</span>
-        <span style="font-weight:800;color:#1A3A6E;font-size:1.15rem;letter-spacing:-0.3px;">HireIQ</span>
+<nav class="no-print" style="position:sticky;top:0;left:0;right:0;z-index:100;
+     display:flex;align-items:center;justify-content:space-between;
+     padding:0 48px;height:68px;
+     background:rgba(255,255,255,0.92);
+     backdrop-filter:blur(12px);
+     border-bottom:1px solid rgba(0,0,0,0.06);
+     margin-bottom:2rem;">
+    <a class="d-flex align-items-center gap-2" href="{% url 'landing' %}" style="text-decoration:none;">
+        <div style="width:34px;height:34px;border-radius:8px;background:#2e4dd4;
+                    display:flex;align-items:center;justify-content:center;
+                    font-size:.85rem;font-weight:700;color:#fff;font-family:monospace;">H</div>
+        <span style="font-size:1.1rem;font-weight:600;color:#111;">HireIQ</span>
     </a>
-        <div class="d-flex gap-3">
-            <a href="{% url 'start_over' %}" class="nav-link text-danger">Start Over</a>
-        </div>
+    <div class="d-flex gap-3">
+        <a href="{% url 'start_over' %}" style="color:#e53e3e;text-decoration:none;font-size:.95rem;">Start Over</a>
     </div>
 </nav>
 
